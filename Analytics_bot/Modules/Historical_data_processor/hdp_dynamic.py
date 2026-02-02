@@ -11,8 +11,8 @@ warnings.filterwarnings('ignore')
 
 # Настройки
 SCRIPT_NAME = "HDP_DYN     :  "                                 # Имя скрипта для вывода в консоль
-K_LINES_DIR = "/srv/ftp/Bot_v2/Data/K_lines/1M"                 # Папка с минутными свечами
-RESULTS_DIR = "/srv/ftp/Bot_v2/Data/K_lines/Dynamic"            # Папка с результатом
+K_LINES_DIR = "C:/workspace/Analytics_bot/Data/K_lines/1M"                 # Папка с минутными свечами
+RESULTS_DIR = "C:/workspace/Analytics_bot/Data/K_lines/Dynamic"            # Папка с результатом
 MAX_RESULT_FILES = 1                                            # Максимум файлов результата
 
 def ensure_directories():

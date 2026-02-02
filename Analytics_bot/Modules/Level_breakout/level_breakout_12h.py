@@ -8,11 +8,11 @@ import subprocess
 
 # Настройки
 SCRIPT_NAME = "LB_12H      :  "                                                             # Имя скрипта для вывода в консоль
-AGR_12H_FOLDER = "/srv/ftp/Bot_v2/Data/Agr_12h"                                             # Папка с историческими агрегированными данными
-K_LINES_DIR = "/srv/ftp/Bot_v2/Data/K_lines/1M"                                             # Папка с минутными свечами
-OUTPUT_FOLDER = "/srv/ftp/Bot_v2/Data/Ticker_up"                                            # Папка с результатом
+AGR_12H_FOLDER = "C:/workspace/Analytics_bot/Data/Agr_12h"                                             # Папка с историческими агрегированными данными
+K_LINES_DIR = "C:/workspace/Analytics_bot/Data/K_lines/1M"                                             # Папка с минутными свечами
+OUTPUT_FOLDER = "C:/workspace/Analytics_bot/Data/Ticker_up"                                            # Папка с результатом
 MAX_RESULT_FILES = 2                                                                        # Максимум файлов результата
-HDP_SCRIPT_PATH = "/srv/ftp/Bot_v2/Modules/Historical_data_processor/hdp_dynamic.py"        # Путь к скрипту hdp_dynamic.py
+HDP_SCRIPT_PATH = "C:/workspace/Analytics_bot/Modules/Historical_data_processor/hdp_dynamic.py"        # Путь к скрипту hdp_dynamic.py
 
 # Создаем выходную папку если она не существует
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)

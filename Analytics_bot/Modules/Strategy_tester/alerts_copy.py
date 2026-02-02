@@ -208,8 +208,8 @@ class AlertsHandler(FileSystemEventHandler):
 
 def main():
     # Пути к папкам
-    alerts_folder = "/srv/ftp/Bot_v2/Data/Alerts"
-    calc_folder = "/srv/ftp/Bot_v2/Data/Alerts_calc"
+    alerts_folder = "C:/workspace/Analytics_bot/Data/Alerts"
+    calc_folder = "C:/workspace/Analytics_bot/Data/Alerts_calc"
     
     # Проверяем существование основной папки
     if not os.path.exists(alerts_folder):

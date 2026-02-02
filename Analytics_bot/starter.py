@@ -4,12 +4,22 @@ import subprocess
 import datetime
 import logging
 import os
+import sys
+
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-MAIN_SCRIPT_NAME = "STARTER     :  "                                                                       # Имя этого скрипта для вывода в консоль
-KLD_DIR = "Modules/K_line_downloader/k_line_downloader.py"                                               # Папка с KLD
-HDP_1H_DIR = "/srv/ftp/Bot_v2/Modules/Historical_data_processor/hdp_1h.py"                               # Папка с HDP_1H
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Папка с KLD
+KLD_DIR = os.path.join(BASE_DIR, "Modules", "K_line_downloader", "k_line_downloader.py")    
+
+# Папка с HDP_1H
+HDP_1H_DIR = os.path.join(BASE_DIR, "Modules", "Historical_data_processor", "hdp_1h.py")                
+
+# Имя этого скрипта для вывода в консоль
+MAIN_SCRIPT_NAME = "STARTER     :  "                                                                       
 
 class ScriptStarter:
     def __init__(self):
@@ -21,66 +31,75 @@ class ScriptStarter:
         background_config = [
             {
                 "name": "Agregator_12h",
-                "command": ["python3", "Modules/Historical_data_processor/agregator_12h.py"],
+                "script": os.path.join(BASE_DIR, "Modules", "Historical_data_processor", "agregator_12h.py"),
             },
             {
                 "name": "Level_breakout_12h", 
-                "command": ["python3", "Modules/Level_breakout/level_breakout_12h.py"],
+                "script": os.path.join(BASE_DIR, "Modules", "Level_breakout", "level_breakout_12h.py"),
             },
             {
                 "name": "total_volume_24h",
-                "command": ["python3", "Modules/Historical_data_processor/total_volume_24h.py"]
+                "script": os.path.join(BASE_DIR, "Modules", "Historical_data_processor", "total_volume_24h.py")
             },
             {
                 "name": "volume_10h",
-                "command": ["python3", "Modules/Historical_data_processor/volume_10h.py"]
+                "script": os.path.join(BASE_DIR, "Modules", "Historical_data_processor", "volume_10h.py")
             },
             {
                 "name": "volume_10m",
-                "command": ["python3", "Modules/Historical_data_processor/volume_10m.py"]
+                "script": os.path.join(BASE_DIR, "Modules", "Historical_data_processor", "volume_10m.py")
             },
             {
                 "name": "ticker_analytics",
-                "command": ["python3", "Modules/Ticker_analytics/ticker_analytics.py"]
+                "script": os.path.join(BASE_DIR, "Modules", "Ticker_analytics", "ticker_analytics.py")
             },
             {
                 "name": "buy_price_writer",
-                "command": ["python3", "Modules/Strategy_tester/buy_price_writer.py"]
+                "script": os.path.join(BASE_DIR, "Modules", "Strategy_tester", "buy_price_writer.py")
             },
             {
                 "name": "alerts_copy",
-                "command": ["python3", "Modules/Strategy_tester/alerts_copy.py"]
+                "script": os.path.join(BASE_DIR, "Modules", "Strategy_tester", "alerts_copy.py")
             },
             {
                 "name": "calculator",
-                "command": ["python3", "Modules/Strategy_tester/calculator.py"]
+                "script": os.path.join(BASE_DIR, "Modules", "Strategy_tester", "calculator.py")
             },
             {
                 "name": "alert_metrics_monitor",
-                "command": ["python3", "Modules/Metrics/alert_metrics_monitor.py"]
+                "script": os.path.join(BASE_DIR, "Modules", "Metrics", "alert_metrics_monitor.py")
             }
         ]
         
         for config in background_config:
+            
             try:
-                # Создаем окружение
-                env = os.environ.copy()
-                if "env" in config:
-                    env.update(config["env"])
-                
+                # Проверяем существование файла
+                if not os.path.exists(config["script"]):
+                    print(MAIN_SCRIPT_NAME + f"❌ Файл не найден: {config['script']}")
+                    continue
+
+                # Формируем команду для Windows (используем python вместо python3)
+                python_exe = sys.executable  # Используем тот же Python, что запустил starter.py
+
                 # Запускаем процесс
                 process = subprocess.Popen(
-                    config["command"],
+                    [python_exe, config["script"]],
+                    cwd=BASE_DIR,
                     #stdout=subprocess.DEVNULL, #Если вывод данных в консоль не нужен
                     #stderr=subprocess.DEVNULL, #Если вывод ошибок в консоль не нужен
                     stdout=None, #Вывод данных в консоль
                     stderr=None, #Вывод ошибок в консоль
 
-                    start_new_session=True,
-                    env=env
+                    start_new_session=True
                 )
                 
-                self.background_processes.append(process)
+                self.background_processes.append({
+                    "name": config["name"],
+                    "process": process,
+                    "script": config["script"]
+                })
+
                 print(MAIN_SCRIPT_NAME + f"✅ Запущен фоновый скрипт: {config['name']} (PID: {process.pid})")
                 
                 # Даем время на инициализацию

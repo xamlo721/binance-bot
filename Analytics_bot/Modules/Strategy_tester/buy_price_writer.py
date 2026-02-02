@@ -11,8 +11,8 @@ SCRIPT_NAME = "BP_WRITER   :  "                           #Имя скрипта
 
 class AlertProcessor:
     def __init__(self):
-        self.alerts_folder = "/srv/ftp/Bot_v2/Data/Alerts"
-        self.klines_folder = "/srv/ftp/Bot_v2/Data/K_lines/1M"
+        self.alerts_folder = "C:/workspace/Analytics_bot/Data/Alerts"
+        self.klines_folder = "C:/workspace/Analytics_bot/Data/K_lines/1M"
         self.processed_files = {}  # Для отслеживания обработанных файлов
         self.last_alert_file = None  # Последний обработанный файл
         
@@ -130,7 +130,7 @@ class AlertProcessor:
             for ticker, buy_price in updates.items():
                 mask = df['ticker'] == ticker
                 if mask.any():
-                    df.loc[mask, 'buy\short_price'] = buy_price
+                    df.loc[mask, r'buy\short_price'] = buy_price
                     df.loc[mask, 'min_price'] = buy_price
                     df.loc[mask, 'max_price'] = buy_price
                     #df.loc[mask, 'result'] = "PASS"
@@ -163,16 +163,16 @@ class AlertProcessor:
             return False
         
         # Находим записи с пустым buy_price
-        empty_buy_price = df[df['buy\short_price'].isna() | (df['buy\short_price'] == '')]
+        empty_buy_price = df[df[r'buy\short_price'].isna() | (df[r'buy\short_price'] == '')]
         
         if empty_buy_price.empty:
-            print(SCRIPT_NAME + f"В файле {alert_file} нет записей с пустым buy\short_price")
+            print(SCRIPT_NAME + fr"В файле {alert_file} нет записей с пустым buy\short_price")
             # Помечаем файл как обработанный
             self.last_alert_file = alert_file
             self.processed_files[alert_file] = self.get_file_hash(filepath)
             return True
         
-        print(SCRIPT_NAME + f"Найдено {len(empty_buy_price)} записей с пустым buy\short_price")
+        print(SCRIPT_NAME + fr"Найдено {len(empty_buy_price)} записей с пустым buy\short_price")
         
         updates = {}
         processed = 0
@@ -194,7 +194,7 @@ class AlertProcessor:
                 if high_price is not None:
                     updates[ticker] = high_price
                     processed += 1
-                    print(SCRIPT_NAME + f"Для тикера {ticker} установлен buy\short_price = {high_price}")
+                    print(SCRIPT_NAME + fr"Для тикера {ticker} установлен buy\short_price = {high_price}")
                 else:
                     print(SCRIPT_NAME + f"Не удалось получить цену для тикера {ticker}")
             else:

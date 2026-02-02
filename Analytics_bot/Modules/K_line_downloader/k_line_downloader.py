@@ -8,7 +8,7 @@ import glob
 from datetime import datetime
 
 SCRIPT_NAME = "KLD_1M      :  "                       # Имя скрипта для вывода в консоль
-K_LINES_DIR = "/srv/ftp/Bot_v2/Data/K_lines/1M"     # Папка с минутными свечами
+K_LINES_DIR = "C:/workspace/Analytics_bot/Data/K_lines/1M"     # Папка с минутными свечами
 CLEAN_OLD_FILES = 180                               # Max файлов в папке
 
 
@@ -120,7 +120,7 @@ def save_to_csv(results):
     filepath = os.path.join(folder, filename)
     filename = os.path.join(filename)
     
-    with open(filepath, 'w', newline='') as csvfile:
+    with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
         # Только нужные поля в правильном порядке
         fieldnames = [
             'symbol',                   # Тикер

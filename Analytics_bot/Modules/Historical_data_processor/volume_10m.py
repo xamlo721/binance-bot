@@ -13,11 +13,16 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Определяем базовую директорию проекта
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Или, если скрипт находится глубже в структуре:
+# BASE_DIR = Path(__file__).parent.parent.parent  # если нужно подняться на 3 уровня вверх
+
 # Настройки
 SCRIPT_NAME = "VOL_10M     :  "
 # Настройки директорий
-K_LINES_DIR = "/srv/ftp/Bot_v2/Data/K_lines/1M"                 # Папка с минутными свечами
-RESULTS_DIR = "/srv/ftp/Bot_v2/Data/Volume_10M"                 # Папка с результатом
+K_LINES_DIR = os.path.join(BASE_DIR, "Data", "K_lines", "1M")                 # Папка с минутными свечами
+RESULTS_DIR = os.path.join(BASE_DIR, "Data", "Volume_10M")                 # Папка с результатом
 MAX_RESULT_FILES = 2                                            # Максимум файлов результата
 
 

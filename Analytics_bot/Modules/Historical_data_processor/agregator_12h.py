@@ -12,9 +12,9 @@ import numpy as np
 
 # Настройки
 SCRIPT_NAME = "AGR_12H     :  "
-K_LINES_1H_DIR = "/srv/ftp/Bot_v2/Data/K_lines/1H"                  # Папка с часовыми свечами
-K_LINES_DIN_DIR = "/srv/ftp/Bot_v2/Data/K_lines/Dynamic"            # Папка с динамическим файлом
-OUTPUT_FOLDER = "/srv/ftp/Bot_v2/Data/Agr_12h"                      # Папка с результатом
+K_LINES_1H_DIR = "C:/workspace/Analytics_bot/Data/K_lines/1H"                  # Папка с часовыми свечами
+K_LINES_DIN_DIR = "C:/workspace/Analytics_bot/Data/K_lines/Dynamic"            # Папка с динамическим файлом
+OUTPUT_FOLDER = "C:/workspace/Analytics_bot/Data/Agr_12h"                      # Папка с результатом
 H_COUNT = 11                                                        # Количество файлов обработки
 MAX_RESULT_FILES = 2                                                # Максимум файлов результата
 

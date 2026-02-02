@@ -145,8 +145,8 @@ class KLineFileHandler(FileSystemEventHandler):
                 current_high = float(kline_row['high'].iloc[0])
                 
                 # Получаем текущие значения из alerts
-                current_min_price = float(row['min_price']) if pd.notna(row['min_price']) else float(row['buy\short_price'])
-                current_max_price = float(row['max_price']) if pd.notna(row['max_price']) else float(row['buy\short_price'])
+                current_min_price = float(row['min_price']) if pd.notna(row['min_price']) else float(row[r'buy\short_price'])
+                current_max_price = float(row['max_price']) if pd.notna(row['max_price']) else float(row[r'buy\short_price'])
                 
                 # Форматируем время для записи
                 time_str = kline_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -216,7 +216,7 @@ class KLineFileHandler(FileSystemEventHandler):
         """Расчет всех производных полей"""
         for idx, row in df.iterrows():
             try:
-                buy_price = float(row['buy\short_price'])
+                buy_price = float(row[r'buy\short_price'])
                 min_price = float(row['min_price']) if pd.notna(row['min_price']) else buy_price
                 max_price = float(row['max_price']) if pd.notna(row['max_price']) else buy_price
                 

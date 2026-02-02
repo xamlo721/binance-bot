@@ -11,8 +11,8 @@ warnings.filterwarnings('ignore')
 
 # Настройки
 SCRIPT_NAME = "HDP_1H      :  "
-K_LINES_DIR = "/srv/ftp/Bot_v2/Data/K_lines/1M"         # Папка с минутными свечами
-RESULTS_DIR = "/srv/ftp/Bot_v2/Data/K_lines/1H"         # Папка с результатом
+K_LINES_DIR = "C:/workspace/Analytics_bot/Data/K_lines/1M"         # Папка с минутными свечами
+RESULTS_DIR = "C:/workspace/Analytics_bot/Data/K_lines/1H"         # Папка с результатом
 FILES_TO_WORK = 60                                      # Количество файлов обработки
 MAX_RESULT_FILES = 720                                  # Максимум файлов результата
 

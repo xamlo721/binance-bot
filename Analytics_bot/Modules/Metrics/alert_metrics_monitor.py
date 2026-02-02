@@ -12,8 +12,8 @@ SCRIPT_NAME = "A_M_M       :  "                           #Имя скрипта
 
 class AlertMetricsProcessor:
     def __init__(self):
-        self.source_dir = "/srv/ftp/Bot_v2/Data/Alerts_calc"
-        self.metrics_dir = "/srv/ftp/Bot_v2/Data/Alerts_calc_metrics"
+        self.source_dir = "C:/workspace/Analytics_bot/Data/Alerts_calc"
+        self.metrics_dir = "C:/workspace/Analytics_bot/Data/Alerts_calc_metrics"
         
         # Создаем директорию для метрик, если не существует
         if not os.path.exists(self.metrics_dir):

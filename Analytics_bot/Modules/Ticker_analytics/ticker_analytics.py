@@ -7,13 +7,14 @@ from watchdog.events import FileSystemEventHandler
 import glob
 import requests
 from datetime import datetime
+from datetime import timezone
 
 # Конфигурация
 SCRIPT_NAME = "T_ANAL      :  " #Имя скрипта для вывода в консоль
-TICKER_UP_FOLDER = "/srv/ftp/Bot_v2/Data/Ticker_up"
-VOLUME_10M_FOLDER = "/srv/ftp/Bot_v2/Data/Volume_10M"
-VOLUME_10H_FOLDER = "/srv/ftp/Bot_v2/Data/Volume_10H"
-ALERTS_FOLDER = "/srv/ftp/Bot_v2/Data/Alerts"  # Новая папка для хранения алертов
+TICKER_UP_FOLDER = "C:/workspace/Analytics_bot/Data/Ticker_up"
+VOLUME_10M_FOLDER = "C:/workspace/Analytics_bot/Data/Volume_10M"
+VOLUME_10H_FOLDER = "C:/workspace/Analytics_bot/Data/Volume_10H"
+ALERTS_FOLDER = "C:/workspace/Analytics_bot/Data/Alerts"  # Новая папка для хранения алертов
 
 # Пороговое значение (X раз) - можно изменить по необходимости
 X_MULTIPLIER = 5.0  # Например, должно быть больше в 2 раза
@@ -26,7 +27,7 @@ def init_alerts_folder():
 
 def get_current_date_str():
     """Получить текущую дату в формате для имени файла (по UTC)"""
-    return datetime.utcnow().strftime("%Y-%m-%d")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 def get_alerts_file_path(date_str=None):
     """Получить путь к файлу алертов для указанной даты"""
@@ -54,7 +55,7 @@ def save_alert_to_file(ticker, reason, bot_token, chat_id, message_thread_id=Non
         'ticker': [ticker],
         'volume': [reason],
         'time': [current_time],
-        'buy\short_price': [pd.NA],
+        r'buy\short_price': [pd.NA],
         'min_price': [pd.NA],
         'min_price_time': [pd.NA],
         'max_price': [pd.NA],

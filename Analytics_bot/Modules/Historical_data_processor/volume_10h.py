@@ -15,9 +15,19 @@ logger = logging.getLogger(__name__)
 # Настройки
 SCRIPT_NAME = "VOL_10H     :  "
 MAX_RESULT_FILES = 1                                            # Максимум файлов результата
+
+# Определяем базовую директорию проекта
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Поднимаемся на нужное количество уровней
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR)))
+
 # Пути к папкам
-input_dir = "/srv/ftp/Bot_v2/Data/K_lines/1H"
-RESULTS_DIR = "/srv/ftp/Bot_v2/Data/Volume_10H"
+input_dir = os.path.join(PROJECT_ROOT, "Data", "K_lines", "1H")
+RESULTS_DIR = os.path.join(PROJECT_ROOT, "Data", "Volume_10H")
+
+# Создаем директории, если их нет
+os.makedirs(input_dir, exist_ok=True)
+os.makedirs(RESULTS_DIR, exist_ok=True)
 
 
 class CSVFileHandler(FileSystemEventHandler):

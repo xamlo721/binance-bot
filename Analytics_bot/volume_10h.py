@@ -7,6 +7,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import logging
 import glob
+from logger import logger
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -22,8 +23,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR)))
 
 # Пути к папкам
-input_dir = os.path.join(PROJECT_ROOT, "Data", "K_lines", "1H")
-RESULTS_DIR = os.path.join(PROJECT_ROOT, "Data", "Volume_10H")
+input_dir = "Data/K_lines/1H" 
+RESULTS_DIR = "Data/K_lines/Volume_10H"
 
 # Создаем директории, если их нет
 os.makedirs(input_dir, exist_ok=True)
@@ -58,7 +59,7 @@ class CSVFileHandler(FileSystemEventHandler):
     def process_new_file(self, new_file):
         """Обработка нового CSV файла"""
         #logger.info(f"Обнаружен новый файл: {new_file.name}")
-        print(SCRIPT_NAME + f"Обнаружен новый файл: {new_file.name}")
+        logger.info(SCRIPT_NAME + f"Обнаружен новый файл: {new_file.name}")
         csv_files = sorted(self.input_dir.glob('Historical_values_1h_*.csv'))
         
         if len(csv_files) >= self.num_files + 1:
@@ -77,11 +78,11 @@ class CSVFileHandler(FileSystemEventHandler):
         
         if len(files_to_process) < 10:
             #logger.warning(f"Недостаточно файлов для обработки. Найдено: {len(files_to_process)}")
-            print(SCRIPT_NAME + f"Недостаточно файлов для обработки. Найдено: {len(files_to_process)}")
+            logger.warning(SCRIPT_NAME + f"Недостаточно файлов для обработки. Найдено: {len(files_to_process)}")
             return
         
         #logger.info(f"Обработка {len(files_to_process)} файлов для агрегации")
-        print(SCRIPT_NAME + f"Обработка {len(files_to_process)} файлов для агрегации")
+        logger.info(SCRIPT_NAME + f"Обработка {len(files_to_process)} файлов для агрегации")
         
         # Словарь для хранения объемов по тикерам
         volumes_by_symbol = {}
@@ -104,7 +105,7 @@ class CSVFileHandler(FileSystemEventHandler):
                     
             except Exception as e:
                 #logger.error(f"Ошибка при чтении файла {file_path}: {e}")
-                print(SCRIPT_NAME + f"Ошибка при чтении файла {file_path}: {e}")
+                logger.error(SCRIPT_NAME + f"Ошибка при чтении файла {file_path}: {e}")
         
         # Создаем DataFrame с агрегированными данными
         aggregated_data = []
@@ -132,14 +133,14 @@ class CSVFileHandler(FileSystemEventHandler):
             result_df.to_csv(output_path, index=False)
             
             #logger.info(f"Создан файл: {output_path} с {len(aggregated_data)} тикерами")
-            print(SCRIPT_NAME + f"Создан файл: {output_path} с {len(aggregated_data)} тикерами")
+            logger.info(SCRIPT_NAME + f"Создан файл: {output_path} с {len(aggregated_data)} тикерами")
             
             # Очищаем старые файлы
             cleanup_result_files()
 
         else:
             #logger.warning("Нет данных для агрегации")
-            print(SCRIPT_NAME + "Нет данных для агрегации")
+            logger.warning(SCRIPT_NAME + "Нет данных для агрегации")
 
 
 def cleanup_result_files():
@@ -151,16 +152,16 @@ def cleanup_result_files():
         oldest_file = files.pop(0)
         try:
             os.remove(oldest_file)
-            print(SCRIPT_NAME + f"Удален старый файл: {os.path.basename(oldest_file)}")
+            logger.info(SCRIPT_NAME + f"Удален старый файл: {os.path.basename(oldest_file)}")
         except OSError as e:
-            print(SCRIPT_NAME + f"Ошибка удаления файла {oldest_file}: {e}")
+            logger.error(SCRIPT_NAME + f"Ошибка удаления файла {oldest_file}: {e}")
 
 
 def main():
       # Проверка существования входной папки
     if not os.path.exists(input_dir):
         #logger.error(f"Входная папка не существует: {input_dir}")
-        print(SCRIPT_NAME + f"Входная папка не существует: {input_dir}")
+        logger.error(SCRIPT_NAME + f"Входная папка не существует: {input_dir}")
         return
     
     # Создаем обработчик событий
@@ -171,7 +172,7 @@ def main():
     observer.schedule(event_handler, input_dir, recursive=False)
     
     #logger.info(f"Начало мониторинга папки: {input_dir}")
-    print(SCRIPT_NAME + f"Начало мониторинга папки: {input_dir}")
+    logger.info(SCRIPT_NAME + f"Начало мониторинга папки: {input_dir}")
     observer.start()
     
     try:
@@ -179,7 +180,7 @@ def main():
             time.sleep(1)
     except KeyboardInterrupt:
         observer.stop()
-        print(SCRIPT_NAME + "Мониторинг остановлен")
+        logger.info(SCRIPT_NAME + "Мониторинг остановлен")
         #logger.info("Мониторинг остановлен")
     
     observer.join()

@@ -5,14 +5,15 @@ from datetime import datetime, timedelta
 import re
 from pathlib import Path
 import hashlib
+from logger import logger
 
 
 SCRIPT_NAME = "BP_WRITER   :  "                           #Имя скрипта для вывода в консоль
 
 class AlertProcessor:
     def __init__(self):
-        self.alerts_folder = "C:/workspace/Analytics_bot/Data/Alerts"
-        self.klines_folder = "C:/workspace/Analytics_bot/Data/K_lines/1M"
+        self.alerts_folder = "Data/Alerts"
+        self.klines_folder = "Data/K_lines/1M"
         self.processed_files = {}  # Для отслеживания обработанных файлов
         self.last_alert_file = None  # Последний обработанный файл
         
@@ -60,7 +61,7 @@ class AlertProcessor:
                 
             return latest_file
         except Exception as e:
-            print(SCRIPT_NAME + f"Ошибка при получении файлов: {e}")
+            logger.error(SCRIPT_NAME + f"Ошибка при получении файлов: {e}")
             return None
     
     def get_file_hash(self, filepath):
@@ -79,7 +80,7 @@ class AlertProcessor:
             filename = f"K_line_{dt.strftime('%Y%m%d_%H%M00')}.csv"
             return filename
         except Exception as e:
-            print(SCRIPT_NAME + f"Ошибка преобразования времени: {e}")
+            logger.error(SCRIPT_NAME + f"Ошибка преобразования времени: {e}")
             return None
     
     def find_klines_file(self, timestamp_str, max_retries=120):
@@ -94,14 +95,14 @@ class AlertProcessor:
             return filepath
         
         # Если файл не найден, ждем и проверяем снова
-        print(SCRIPT_NAME + f"Файл {filename} не найден, ожидаем...")
+        logger.warning(SCRIPT_NAME + f"Файл {filename} не найден, ожидаем...")
         for attempt in range(max_retries):
             time.sleep(1)  # Ждем 1 секунду
             if os.path.exists(filepath):
-                print(SCRIPT_NAME + f"Файл {filename} найден после {attempt + 1} секунд ожидания")
+                logger.info(SCRIPT_NAME + f"Файл {filename} найден после {attempt + 1} секунд ожидания")
                 return filepath
         
-        print(SCRIPT_NAME + f"Файл {filename} не найден после {max_retries} секунд ожидания")
+        logger.error(SCRIPT_NAME + f"Файл {filename} не найден после {max_retries} секунд ожидания")
         return None
     
     def get_high_price_for_ticker(self, klines_file, ticker):
@@ -113,10 +114,10 @@ class AlertProcessor:
             if not ticker_data.empty:
                 return ticker_data.iloc[0]['close']
             else:
-                print(SCRIPT_NAME + f"Тикер {ticker} не найден в файле {klines_file}")
+                logger.error(SCRIPT_NAME + f"Тикер {ticker} не найден в файле {klines_file}")
                 return None
         except Exception as e:
-            print(SCRIPT_NAME + f"Ошибка при чтении файла K-line: {e}")
+            logger.error(SCRIPT_NAME + f"Ошибка при чтении файла K-line: {e}")
             return None
     
     def update_alert_file(self, alert_file, updates):
@@ -138,41 +139,41 @@ class AlertProcessor:
             # Сохраняем обратно
             df.to_csv(filepath, index=False)
             
-            print(SCRIPT_NAME + f"Файл {alert_file} обновлен с {len(updates)} записями")
+            logger.info(SCRIPT_NAME + f"Файл {alert_file} обновлен с {len(updates)} записями")
             return True
         except Exception as e:
-            print(SCRIPT_NAME + f"Ошибка при обновлении файла: {e}")
+            logger.error(SCRIPT_NAME + f"Ошибка при обновлении файла: {e}")
             return False
     
     def process_alert_file(self, alert_file):
         """Обработка одного файла alerts"""
         filepath = os.path.join(self.alerts_folder, alert_file)
         
-        print(SCRIPT_NAME + f"Начинаем обработку файла: {alert_file}")
+        logger.info(SCRIPT_NAME + f"Начинаем обработку файла: {alert_file}")
         
         # Ждем стабилизации файла
         if not self.wait_for_file_stability(filepath):
-            print(SCRIPT_NAME + f"Файл {alert_file} не стабилизировался, пропускаем")
+            logger.error(SCRIPT_NAME + f"Файл {alert_file} не стабилизировался, пропускаем")
             return False
         
         # Читаем файл
         try:
             df = pd.read_csv(filepath)
         except Exception as e:
-            print(SCRIPT_NAME + f"Ошибка при чтении файла {alert_file}: {e}")
+            logger.error(SCRIPT_NAME + f"Ошибка при чтении файла {alert_file}: {e}")
             return False
         
         # Находим записи с пустым buy_price
         empty_buy_price = df[df[r'buy\short_price'].isna() | (df[r'buy\short_price'] == '')]
         
         if empty_buy_price.empty:
-            print(SCRIPT_NAME + fr"В файле {alert_file} нет записей с пустым buy\short_price")
+            logger.info(SCRIPT_NAME + fr"В файле {alert_file} нет записей с пустым buy\short_price")
             # Помечаем файл как обработанный
             self.last_alert_file = alert_file
             self.processed_files[alert_file] = self.get_file_hash(filepath)
             return True
         
-        print(SCRIPT_NAME + fr"Найдено {len(empty_buy_price)} записей с пустым buy\short_price")
+        logger.info(SCRIPT_NAME + fr"Найдено {len(empty_buy_price)} записей с пустым buy\short_price")
         
         updates = {}
         processed = 0
@@ -182,7 +183,7 @@ class AlertProcessor:
             ticker = row['ticker']
             timestamp = row['time']
             
-            print(SCRIPT_NAME + f"Обработка тикера {ticker} со временем {timestamp}")
+            logger.info(SCRIPT_NAME + f"Обработка тикера {ticker} со временем {timestamp}")
             
             # Ищем файл K-line
             klines_file = self.find_klines_file(timestamp)
@@ -194,11 +195,11 @@ class AlertProcessor:
                 if high_price is not None:
                     updates[ticker] = high_price
                     processed += 1
-                    print(SCRIPT_NAME + fr"Для тикера {ticker} установлен buy\short_price = {high_price}")
+                    logger.info(SCRIPT_NAME + fr"Для тикера {ticker} установлен buy\short_price = {high_price}")
                 else:
-                    print(SCRIPT_NAME + f"Не удалось получить цену для тикера {ticker}")
+                    logger.error(SCRIPT_NAME + f"Не удалось получить цену для тикера {ticker}")
             else:
-                print(SCRIPT_NAME + f"Файл K-line для времени {timestamp} не найден, пропускаем тикер {ticker}")
+                logger.warning(SCRIPT_NAME + f"Файл K-line для времени {timestamp} не найден, пропускаем тикер {ticker}")
         
         # Если есть обновления, сохраняем их
         if updates:
@@ -213,7 +214,7 @@ class AlertProcessor:
     
     def run(self, check_interval=10):
         """Основной цикл обработки"""
-        print(SCRIPT_NAME + "Запуск мониторинга папки с alerts...")
+        logger.info(SCRIPT_NAME + "Запуск мониторинга папки с alerts...")
         
         while True:
             try:
@@ -221,7 +222,7 @@ class AlertProcessor:
                 latest_file = self.get_latest_alert_file()
                 
                 if latest_file:
-                    print(SCRIPT_NAME + f"Обнаружен новый/измененный файл: {latest_file}")
+                    logger.info(SCRIPT_NAME + f"Обнаружен новый/измененный файл: {latest_file}")
                     
                     # Обрабатываем файл
                     self.process_alert_file(latest_file)
@@ -230,10 +231,10 @@ class AlertProcessor:
                     time.sleep(check_interval)
                     
             except KeyboardInterrupt:
-                print(SCRIPT_NAME + "\nОстановка скрипта...")
+                logger.info(SCRIPT_NAME + "\nОстановка скрипта...")
                 break
             except Exception as e:
-                print(SCRIPT_NAME + f"Ошибка в основном цикле: {e}")
+                logger.error(SCRIPT_NAME + f"Ошибка в основном цикле: {e}")
                 time.sleep(check_interval)
 
 def main():

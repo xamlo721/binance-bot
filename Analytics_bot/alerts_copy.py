@@ -5,6 +5,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from datetime import datetime
 import glob
+from logger import logger
 
 
 SCRIPT_NAME = "ALERTS_COPY :  "                           #Имя скрипта для вывода в консоль
@@ -31,7 +32,7 @@ class AlertsHandler(FileSystemEventHandler):
         try:
             files = glob.glob(os.path.join(self.alerts_folder, "alerts_*.csv"))
             if not files:
-                print(SCRIPT_NAME + f"Нет файлов в папке {self.alerts_folder}")
+                logger.warning(SCRIPT_NAME + f"Нет файлов в папке {self.alerts_folder}")
                 return
             
             # Сортируем по времени создания (новейший первый)
@@ -39,15 +40,15 @@ class AlertsHandler(FileSystemEventHandler):
             newest_file = files[0]
             
             if newest_file != self.current_file:
-                print(SCRIPT_NAME + f"Обнаружен новый файл: {os.path.basename(newest_file)}")
+                logger.info(SCRIPT_NAME + f"Обнаружен новый файл: {os.path.basename(newest_file)}")
                 self.current_file = newest_file
                 self.current_filename = os.path.basename(newest_file)
                 self.known_rows = self.read_file_rows(newest_file)
                 self.last_file_mod_time = os.path.getmtime(newest_file)
-                print(SCRIPT_NAME + f"Загружено {len(self.known_rows)} строк из файла")
+                logger.info(SCRIPT_NAME + f"Загружено {len(self.known_rows)} строк из файла")
         
         except Exception as e:
-            print(SCRIPT_NAME + f"Ошибка при обновлении текущего файла: {e}")
+            logger.error(SCRIPT_NAME + f"Ошибка при обновлении текущего файла: {e}")
     
     def read_file_rows(self, filepath):
         """Прочитать все строки файла и вернуть множество для сравнения"""
@@ -61,7 +62,7 @@ class AlertsHandler(FileSystemEventHandler):
                         rows.add(cleaned_line)
             return rows
         except Exception as e:
-            print(SCRIPT_NAME + f"Ошибка при чтении файла {filepath}: {e}")
+            logger.error(SCRIPT_NAME + f"Ошибка при чтении файла {filepath}: {e}")
             return set()
     
     def check_for_new_rows(self):
@@ -80,7 +81,7 @@ class AlertsHandler(FileSystemEventHandler):
             new_rows = current_rows - self.known_rows
             
             if new_rows:
-                print(SCRIPT_NAME + f"Найдено {len(new_rows)} новых строк")
+                logger.info(SCRIPT_NAME + f"Найдено {len(new_rows)} новых строк")
                 self.known_rows = current_rows
                 
                 # Возвращаем новые строки как список
@@ -89,7 +90,7 @@ class AlertsHandler(FileSystemEventHandler):
             return []
         
         except Exception as e:
-            print(SCRIPT_NAME + f"Ошибка при проверке новых строк: {e}")
+            logger.error(SCRIPT_NAME + f"Ошибка при проверке новых строк: {e}")
             return []
     
     def process_new_rows(self, new_rows):
@@ -105,7 +106,7 @@ class AlertsHandler(FileSystemEventHandler):
             with open(self.current_file, 'r', encoding='utf-8') as f:
                 header = f.readline().strip()
         except Exception as e:
-            print(SCRIPT_NAME + f"Ошибка при чтении заголовка: {e}")
+            logger.error(SCRIPT_NAME + f"Ошибка при чтении заголовка: {e}")
             return
         
         # Анализируем каждую новую строку
@@ -123,10 +124,10 @@ class AlertsHandler(FileSystemEventHandler):
                 
                 # Проверяем, есть ли значения цен
                 if buy_price and min_price and max_price:
-                    print(SCRIPT_NAME + f"Найдены цены для {ticker}")
+                    logger.info(SCRIPT_NAME + f"Найдены цены для {ticker}")
                     processed_rows.append(row)
                 else:
-                    print(SCRIPT_NAME + f"Цены не заполнены для {ticker}, пропускаем")
+                    logger.warning(SCRIPT_NAME + f"Цены не заполнены для {ticker}, пропускаем")
         
         # Если есть строки для записи, записываем их в новый файл
         if processed_rows and header:
@@ -151,16 +152,16 @@ class AlertsHandler(FileSystemEventHandler):
                 if not file_exists:
                     # Если файл новый, записываем заголовок
                     f.write(header + '\n')
-                    print(SCRIPT_NAME + f"Создан новый файл: {calc_filename}")
+                    logger.info(SCRIPT_NAME + f"Создан новый файл: {calc_filename}")
                 
                 # Записываем все строки
                 for row in rows:
                     f.write(row + '\n')
                 
-                print(SCRIPT_NAME + f"Записано {len(rows)} строк в файл {calc_filename}")
+                logger.info(SCRIPT_NAME + f"Записано {len(rows)} строк в файл {calc_filename}")
         
         except Exception as e:
-            print(SCRIPT_NAME + f"Ошибка при записи в файл: {e}")
+            logger.error(SCRIPT_NAME + f"Ошибка при записи в файл: {e}")
     
     def wait_for_50th_second(self):
         """Ожидать до 50-й секунды текущей минуты"""
@@ -169,12 +170,12 @@ class AlertsHandler(FileSystemEventHandler):
         if current_second < 50:
             # Ждем до 50-й секунды
             sleep_time = 50 - current_second
-            print(SCRIPT_NAME + f"Ожидание {sleep_time} секунд до 50-й секунды...")
+            logger.info(SCRIPT_NAME + f"Ожидание {sleep_time} секунд до 50-й секунды...")
             time.sleep(sleep_time)
         elif current_second > 50:
             # Если уже прошла 50-я секунда, ждем следующей минуты
             sleep_time = 60 - current_second + 50
-            print(SCRIPT_NAME + f"Ожидание {sleep_time} секунд до следующей 50-й секунды...")
+            logger.info(SCRIPT_NAME + f"Ожидание {sleep_time} секунд до следующей 50-й секунды...")
             time.sleep(sleep_time)
         # Если сейчас ровно 50-я секунда, не ждем
     
@@ -201,23 +202,23 @@ class AlertsHandler(FileSystemEventHandler):
             
             # Проверяем, что это новый файл с алертами
             if filename.startswith('alerts_') and filename.endswith('.csv'):
-                print(SCRIPT_NAME + f"Создан новый файл: {filename}")
+                logger.info(SCRIPT_NAME + f"Создан новый файл: {filename}")
                 # Обновляем текущий файл
                 time.sleep(1)  # Небольшая задержка для завершения записи
                 self.update_current_file()
 
 def main():
     # Пути к папкам
-    alerts_folder = "C:/workspace/Analytics_bot/Data/Alerts"
-    calc_folder = "C:/workspace/Analytics_bot/Data/Alerts_calc"
+    alerts_folder = "Data/Alerts"
+    calc_folder = "Alerts_calc"
     
     # Проверяем существование основной папки
     if not os.path.exists(alerts_folder):
-        print(SCRIPT_NAME + f"Папка {alerts_folder} не существует!")
+        logger.error(SCRIPT_NAME + f"Папка {alerts_folder} не существует!")
         return
     
-    print(SCRIPT_NAME + f"Мониторинг папки: {alerts_folder}")
-    print(SCRIPT_NAME + f"Файлы результатов будут сохраняться в: {calc_folder}")
+    logger.info(SCRIPT_NAME + f"Мониторинг папки: {alerts_folder}")
+    logger.info(SCRIPT_NAME + f"Файлы результатов будут сохраняться в: {calc_folder}")
     
     # Создаем обработчик и наблюдатель
     event_handler = AlertsHandler(alerts_folder, calc_folder)
@@ -225,7 +226,7 @@ def main():
     observer.schedule(event_handler, alerts_folder, recursive=False)
     
     try:
-        print(SCRIPT_NAME + "Запуск мониторинга...")
+        logger.info(SCRIPT_NAME + "Запуск мониторинга...")
         observer.start()
         
         # Также периодически проверяем наличие новых файлов
@@ -238,7 +239,7 @@ def main():
                     event_handler.process_new_rows(new_rows)
     
     except KeyboardInterrupt:
-        print(SCRIPT_NAME + "\nОстановка мониторинга...")
+        logger.info(SCRIPT_NAME + "\nОстановка мониторинга...")
         observer.stop()
     
     observer.join()

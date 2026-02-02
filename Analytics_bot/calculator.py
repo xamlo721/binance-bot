@@ -9,6 +9,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import traceback
 from typing import Optional, List, Dict, Tuple
+from logger import logger
 
 
 SCRIPT_NAME = "CALC        :  "                           #Имя скрипта для вывода в консоль
@@ -23,7 +24,7 @@ class KLineFileHandler(FileSystemEventHandler):
         if not event.is_directory:
             file_path = Path(event.src_path)
             if file_path.suffix == '.csv' and 'K_line' in file_path.name:
-                print(SCRIPT_NAME + f"Обнаружен новый файл: {file_path.name}")
+                logger.info(SCRIPT_NAME + f"Обнаружен новый файл: {file_path.name}")
                 # Ждем стабилизации файла
                 time.sleep(5)
                 self.process_kline_file(file_path)
@@ -34,7 +35,7 @@ class KLineFileHandler(FileSystemEventHandler):
             # Читаем K-line файл
             kline_df = self.read_kline_file(kline_file_path)
             if kline_df is None or kline_df.empty:
-                print(SCRIPT_NAME + f"Не удалось прочитать K-line файл: {kline_file_path.name}")
+                logger.error(SCRIPT_NAME + f"Не удалось прочитать K-line файл: {kline_file_path.name}")
                 return
             
             # Получаем время из имени файла K-line
@@ -48,10 +49,10 @@ class KLineFileHandler(FileSystemEventHandler):
                 self.update_alert_file(alert_file, kline_df, kline_time)
                 
             self.processed_files.add(kline_file_path.name)
-            print(SCRIPT_NAME + f"Обработка завершена для: {kline_file_path.name}")
+            logger.info(SCRIPT_NAME + f"Обработка завершена для: {kline_file_path.name}")
             
         except Exception as e:
-            print(SCRIPT_NAME + f"Ошибка при обработке файла {kline_file_path.name}: {str(e)}")
+            logger.error(SCRIPT_NAME + f"Ошибка при обработке файла {kline_file_path.name}: {str(e)}")
             traceback.print_exc()
     
     def read_kline_file(self, file_path: Path) -> Optional[pd.DataFrame]:
@@ -71,14 +72,14 @@ class KLineFileHandler(FileSystemEventHandler):
                     #print(SCRIPT_NAME + f"Успешно прочитан K-line файл: {file_path.name}, строк: {len(df)}")
                     return df
                 else:
-                    print(SCRIPT_NAME + f"Файл {file_path.name} все еще изменяется...")
+                    logger.warning(SCRIPT_NAME + f"Файл {file_path.name} все еще изменяется...")
                     
             except Exception as e:
-                print(SCRIPT_NAME + f"Попытка {attempt + 1} не удалась: {str(e)}")
+                logger.warning(SCRIPT_NAME + f"Попытка {attempt + 1} не удалась: {str(e)}")
             
             attempt += 1
         
-        print(SCRIPT_NAME + f"Не удалось прочитать стабильный файл: {file_path.name}")
+        logger.error(SCRIPT_NAME + f"Не удалось прочитать стабильный файл: {file_path.name}")
         return None
     
     def extract_time_from_kline_filename(self, filename: str) -> datetime:
@@ -113,7 +114,7 @@ class KLineFileHandler(FileSystemEventHandler):
         try:
             # Проверяем, не изменяется ли файл в данный момент
             if self.is_file_locked(alert_file_path):
-                print(SCRIPT_NAME + f"Файл {alert_file_path.name} в процессе изменения, пропускаем")
+                logger.info(SCRIPT_NAME + f"Файл {alert_file_path.name} в процессе изменения, пропускаем")
                 return
             
             # Читаем файл alerts_calc
@@ -127,7 +128,7 @@ class KLineFileHandler(FileSystemEventHandler):
             recent_alerts = alert_df[alert_df['time_dt'] >= time_threshold].copy()
             
             if recent_alerts.empty:
-                print(SCRIPT_NAME + f"В файле {alert_file_path.name} нет записей за последние 48 часов")
+                logger.info(SCRIPT_NAME + f"В файле {alert_file_path.name} нет записей за последние 48 часов")
                 return
             
             # Обновляем min_price и max_price
@@ -156,14 +157,14 @@ class KLineFileHandler(FileSystemEventHandler):
                     alert_df.at[idx, 'min_price'] = current_low
                     alert_df.at[idx, 'min_price_time'] = time_str
                     updated_count += 1
-                    print(SCRIPT_NAME + f"Обновлен min_price для {ticker}: {current_min_price} -> {current_low}")
+                    logger.info(SCRIPT_NAME + f"Обновлен min_price для {ticker}: {current_min_price} -> {current_low}")
                 
                 # Обновляем max_price если нужно
                 if current_high > current_max_price:
                     alert_df.at[idx, 'max_price'] = current_high
                     alert_df.at[idx, 'max_price_time'] = time_str
                     updated_count += 1
-                    print(SCRIPT_NAME + f"Обновлен max_price для {ticker}: {current_max_price} -> {current_high}")
+                    logger.info(SCRIPT_NAME + f"Обновлен max_price для {ticker}: {current_max_price} -> {current_high}")
             
             if updated_count > 0:
                 # Пересчитываем все производные поля
@@ -171,12 +172,12 @@ class KLineFileHandler(FileSystemEventHandler):
                 
                 # Сохраняем обновленный файл
                 self.save_alert_file(alert_df, alert_file_path)
-                print(SCRIPT_NAME + f"Файл {alert_file_path.name} обновлен: {updated_count} записей изменено")
+                logger.info(SCRIPT_NAME + f"Файл {alert_file_path.name} обновлен: {updated_count} записей изменено")
             else:
-                print(SCRIPT_NAME + f"В файле {alert_file_path.name} не требуется обновлений")
+                logger.info(SCRIPT_NAME + f"В файле {alert_file_path.name} не требуется обновлений")
                 
         except Exception as e:
-            print(SCRIPT_NAME + f"Ошибка при обновлении файла {alert_file_path.name}: {str(e)}")
+            logger.error(SCRIPT_NAME + f"Ошибка при обновлении файла {alert_file_path.name}: {str(e)}")
             traceback.print_exc()
     
     def is_file_locked(self, file_path: Path) -> bool:
@@ -209,7 +210,7 @@ class KLineFileHandler(FileSystemEventHandler):
             #print(SCRIPT_NAME + f"Успешно прочитан файл alerts_calc: {file_path.name}, строк: {len(df)}")
             return df
         except Exception as e:
-            print(SCRIPT_NAME + f"Ошибка при чтении файла {file_path.name}: {str(e)}")
+            logger.error(SCRIPT_NAME + f"Ошибка при чтении файла {file_path.name}: {str(e)}")
             return None
     
     def calculate_derived_fields(self, df: pd.DataFrame):
@@ -276,7 +277,7 @@ class KLineFileHandler(FileSystemEventHandler):
                         df.at[idx, field_name] = max_profit_percent * 0.3
                         
             except Exception as e:
-                print(SCRIPT_NAME + f"Ошибка при расчете полей для строки {idx}: {str(e)}")
+                logger.error(SCRIPT_NAME + f"Ошибка при расчете полей для строки {idx}: {str(e)}")
                 continue
     
     def save_alert_file(self, df: pd.DataFrame, file_path: Path):
@@ -292,24 +293,24 @@ class KLineFileHandler(FileSystemEventHandler):
             
             # Заменяем оригинальный файл
             temp_path.replace(file_path)
-            print(SCRIPT_NAME + f"Файл успешно сохранен: {file_path.name}")
+            logger.info(SCRIPT_NAME + f"Файл успешно сохранен: {file_path.name}")
             
         except Exception as e:
-            print(SCRIPT_NAME + f"Ошибка при сохранении файла {file_path.name}: {str(e)}")
+            logger.error(SCRIPT_NAME + f"Ошибка при сохранении файла {file_path.name}: {str(e)}")
             raise
 
 def main():
     # Пути к папкам
-    k_lines_path = "/srv/ftp/Bot_v2/Data/K_lines/1M"
-    alerts_calc_path = "/srv/ftp/Bot_v2/Data/Alerts_calc"
+    k_lines_path = "Data/K_lines/1M"
+    alerts_calc_path = "Data/Alerts_calc"
     
     # Проверяем существование папок
     if not os.path.exists(k_lines_path):
-        print(SCRIPT_NAME + f"Папка K_lines не существует: {k_lines_path}")
+        logger.error(SCRIPT_NAME + f"Папка K_lines не существует: {k_lines_path}")
         return
     
     if not os.path.exists(alerts_calc_path):
-        print(SCRIPT_NAME + f"Папка Alerts_calc не существует: {alerts_calc_path}")
+        logger.error(SCRIPT_NAME + f"Папка Alerts_calc не существует: {alerts_calc_path}")
         return
     
     # Создаем обработчик и наблюдатель
@@ -317,23 +318,23 @@ def main():
     observer = Observer()
     observer.schedule(event_handler, k_lines_path, recursive=False)
     
-    print(SCRIPT_NAME + f"Начинаем мониторинг папки: {k_lines_path}")
-    print(SCRIPT_NAME + f"Обрабатываем файлы из папки: {alerts_calc_path}")
-    print(SCRIPT_NAME + "Скрипт запущен. Ожидание новых K-line файлов...")
+    logger.info(SCRIPT_NAME + f"Начинаем мониторинг папки: {k_lines_path}")
+    logger.info(SCRIPT_NAME + f"Обрабатываем файлы из папки: {alerts_calc_path}")
+    logger.info(SCRIPT_NAME + "Скрипт запущен. Ожидание новых K-line файлов...")
     
     try:
         observer.start()
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print(SCRIPT_NAME + "\nОстановка мониторинга...")
+        logger.info(SCRIPT_NAME + "\nОстановка мониторинга...")
         observer.stop()
     except Exception as e:
-        print(SCRIPT_NAME + f"Критическая ошибка: {str(e)}")
+        logger.error(SCRIPT_NAME + f"Критическая ошибка: {str(e)}")
         traceback.print_exc()
     finally:
         observer.join()
-        print(SCRIPT_NAME + "Мониторинг остановлен.")
+        logger.info(SCRIPT_NAME + "Мониторинг остановлен.")
 
 if __name__ == "__main__":
     main()

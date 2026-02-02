@@ -9,13 +9,14 @@ from pathlib import Path
 import glob
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
+from logger import logger
 
 # Настройки
-SCRIPT_NAME = "T_VOL_24H   :  "                                     # Имя скрипта
-K_LINES_1H_DIR = "C:/workspace/Analytics_bot/Data/K_lines/1H"                  # Папка с часовыми свечами
-K_LINES_DIN_DIR = "C:/workspace/Analytics_bot/Data/K_lines/Dynamic"            # Папка с динамическим файлом
-OUTPUT_FOLDER = "C:/workspace/Analytics_bot/Data/Total_volume_24H"             # Папка с результатом
-H_COUNT = 23                                                        # Количество файлов обработки
+SCRIPT_NAME = "AGR_12H     :  "
+K_LINES_1H_DIR = "Data/K_lines/1H"                  # Папка с часовыми свечами
+K_LINES_DIN_DIR = "Data/K_lines/Dynamic"            # Папка с динамическим файлом
+OUTPUT_FOLDER = "Data/Agr_12h"                      # Папка с результатом
+H_COUNT = 11                                                        # Количество файлов обработки
 MAX_RESULT_FILES = 2                                                # Максимум файлов результата
 
 class CSVFileHandler(FileSystemEventHandler):
@@ -32,7 +33,7 @@ class CSVFileHandler(FileSystemEventHandler):
         file_path = event.src_path
         if file_path.endswith('.csv') and 'Historical_values_dynamic' in file_path:
             file_name = Path(file_path).name
-            print(SCRIPT_NAME + f"Обнаружен новый файл: {file_name}")
+            logger.info(SCRIPT_NAME + f"Обнаружен новый файл: {file_name}")
             self.process_file(file_path)
     
     def wait_for_file_stability(self, file_path, check_interval=0.5, max_attempts=15):  # Уменьшено время ожидания
@@ -57,11 +58,11 @@ class CSVFileHandler(FileSystemEventHandler):
                 time.sleep(check_interval)
                 attempts += 1
             except Exception as e:
-                print(SCRIPT_NAME + f"Ошибка при проверке стабильности файла: {e}")
+                logger.error(SCRIPT_NAME + f"Ошибка при проверке стабильности файла: {e}")
                 time.sleep(check_interval)
                 attempts += 1
         
-        print(SCRIPT_NAME + "Превышено время ожидания стабилизации файла")
+        logger.warning(SCRIPT_NAME + "Превышено время ожидания стабилизации файла")
         return False
     
     def get_latest_h1_files(self, count=H_COUNT):
@@ -69,11 +70,12 @@ class CSVFileHandler(FileSystemEventHandler):
         current_time = time.time()
 
         # Вычисляем количество часовых файлов, в зависимости от реального времени
+        #NEW_H_COUNT = H_COUNT
         MINUTE = datetime.now().minute
         if MINUTE == 0:
             count = H_COUNT + 1
 
-        print(SCRIPT_NAME + f"Будет обработано {count} часовых файлов")
+        logger.info(SCRIPT_NAME + f"Будет обработано {count} часовых файлов")
 
         # Используем кэш, если он еще актуален
         if (self._h1_files_cache and 
@@ -105,26 +107,25 @@ class CSVFileHandler(FileSystemEventHandler):
             return result_files
         
         except Exception as e:
-            print(SCRIPT_NAME + f"Ошибка при получении часовых файлов: {e}")
+            logger.error(SCRIPT_NAME + f"Ошибка при получении часовых файлов: {e}")
             return []
     
     def process_single_file(self, file_path):
-        """Обрабатывает один файл и возвращает сумму total_volume для каждого тикера"""
+        """Обрабатывает один файл и возвращает максимальные high значения"""
         try:
             # Используем более быстрые параметры чтения CSV
-            # Читаем только нужные колонки - total_volume вместо high
             df = pd.read_csv(
                 file_path, 
-                usecols=['symbol', 'total_volume'],  # Изменено с high на total_volume
-                dtype={'symbol': 'category', 'total_volume': np.float64}  # Используем float64 для суммирования
+                usecols=['symbol', 'high'],  # Читаем только нужные колонки
+                dtype={'symbol': 'category', 'high': np.float32}  # Оптимизируем типы данных
             )
             
-            # Группируем и СУММИРУЕМ total_volume для каждого символа
-            sum_volumes = df.groupby('symbol', observed=False)['total_volume'].sum()
-            return sum_volumes.to_dict()
+            # Группируем и находим максимумы для каждого символа
+            max_highs = df.groupby('symbol', observed=True)['high'].max()
+            return max_highs.to_dict()
             
         except Exception as e:
-            print(SCRIPT_NAME + f"Ошибка при обработке файла {file_path}: {e}")
+            logger.error(SCRIPT_NAME + f"Ошибка при обработке файла {file_path}: {e}")
             return {}
     
     def extract_timestamp(self, filename):
@@ -153,51 +154,49 @@ class CSVFileHandler(FileSystemEventHandler):
             all_files = [dynamic_file_path] + h1_files
             
             # Обрабатываем файлы параллельно
-            total_volume_values = {}
+            max_high_values = {}
             with ThreadPoolExecutor(max_workers=4) as executor:
                 results = list(executor.map(self.process_single_file, all_files))
             
-            # ОБЪЕДИНЯЕМ РЕЗУЛЬТАТЫ СУММИРОВАНИЕМ
+            # Объединяем результаты
             for result in results:
-                for symbol, volume in result.items():
-                    if symbol not in total_volume_values:
-                        total_volume_values[symbol] = volume
-                    else:
-                        total_volume_values[symbol] += volume
+                for symbol, high in result.items():
+                    if symbol not in max_high_values or high > max_high_values[symbol]:
+                        max_high_values[symbol] = high
             
             # Создаем результирующий DataFrame более эффективно
-            if total_volume_values:
-                symbols = list(total_volume_values.keys())
-                total_volumes = [total_volume_values[sym] for sym in symbols]
+            if max_high_values:
+                symbols = list(max_high_values.keys())
+                highs = [max_high_values[sym] for sym in symbols]
                 
                 result_df = pd.DataFrame({
                     'symbol': symbols,
-                    'total_volume': total_volumes  # Новое имя колонки
+                    'high': highs
                 })
                 
                 # Создаем имя для выходного файла
                 timestamp = self.extract_timestamp(os.path.basename(dynamic_file_path))
-                output_filename = f"Total_volume_{timestamp}.csv"
+                output_filename = f"Aggregated_high_{timestamp}.csv"
                 output_path = os.path.join(OUTPUT_FOLDER, output_filename)
                 
                 # Сохраняем результат
                 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
                 result_df.to_csv(output_path, index=False)
                 #print(SCRIPT_NAME + f"Результат сохранен в: {output_path}")
-                print(SCRIPT_NAME + f"Обработано тикеров: {len(result_df)}")
+                logger.info(SCRIPT_NAME + f"Обработано тикеров: {len(result_df)}")
             else:
-                print(SCRIPT_NAME + "Нет данных для сохранения")
+                logger.info(SCRIPT_NAME + "Нет данных для сохранения")
             
             # Очищаем старые файлы
             cleanup_result_files() 
             
         except Exception as e:
-            print(SCRIPT_NAME + f"Ошибка при обработке файла {dynamic_file_path}: {e}")
+            logger.error(SCRIPT_NAME + f"Ошибка при обработке файла {dynamic_file_path}: {e}")
 
 
 def cleanup_result_files():
     """Удаляет старые файлы результатов если их больше MAX_RESULT_FILES"""
-    files = glob.glob(os.path.join(OUTPUT_FOLDER, "Total_volume_*.csv"))
+    files = glob.glob(os.path.join(OUTPUT_FOLDER, "Aggregated_high_*.csv"))
     files.sort()
     
     while len(files) >= MAX_RESULT_FILES + 1:
@@ -206,7 +205,7 @@ def cleanup_result_files():
             os.remove(oldest_file)
             #print(SCRIPT_NAME + f"Удален старый файл: {os.path.basename(oldest_file)}")
         except OSError as e:
-            print(SCRIPT_NAME + f"Ошибка удаления файла {oldest_file}: {e}")
+            logger.error(SCRIPT_NAME + f"Ошибка удаления файла {oldest_file}: {e}")
 
 
 def main():
@@ -218,7 +217,7 @@ def main():
     event_handler = CSVFileHandler()
     observer = Observer()
     observer.schedule(event_handler, K_LINES_DIN_DIR, recursive=False)
-    print(SCRIPT_NAME + f"Мониторинг запущен...")
+    logger.info(SCRIPT_NAME + f"Мониторинг запущен...")
     
     try:
         observer.start()
@@ -226,7 +225,7 @@ def main():
             time.sleep(1)
     except KeyboardInterrupt:
         observer.stop()
-        print(SCRIPT_NAME + "Мониторинг остановлен")
+        logger.info(SCRIPT_NAME + "Мониторинг остановлен")
     
     observer.join()
 

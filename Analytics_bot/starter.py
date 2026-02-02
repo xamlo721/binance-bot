@@ -2,21 +2,19 @@ import schedule
 import time
 import subprocess
 import datetime
-import logging
 import os
 import sys
 
+from logger import logger
 from pathlib import Path
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Папка с KLD
-KLD_DIR = os.path.join(BASE_DIR, "Modules", "K_line_downloader", "k_line_downloader.py")    
+KLD_DIR = os.path.join(BASE_DIR, "k_line_downloader.py")    
 
 # Папка с HDP_1H
-HDP_1H_DIR = os.path.join(BASE_DIR, "Modules", "Historical_data_processor", "hdp_1h.py")                
+HDP_1H_DIR = os.path.join(BASE_DIR, "hdp_1h.py")                
 
 # Имя этого скрипта для вывода в консоль
 MAIN_SCRIPT_NAME = "STARTER     :  "                                                                       
@@ -31,52 +29,52 @@ class ScriptStarter:
         background_config = [
             {
                 "name": "Agregator_12h",
-                "script": os.path.join(BASE_DIR, "Modules", "Historical_data_processor", "agregator_12h.py"),
+                "script": os.path.join(BASE_DIR, "agregator_12h.py"),
             },
             {
                 "name": "Level_breakout_12h", 
-                "script": os.path.join(BASE_DIR, "Modules", "Level_breakout", "level_breakout_12h.py"),
+                "script": os.path.join(BASE_DIR, "level_breakout_12h.py"),
             },
             {
                 "name": "total_volume_24h",
-                "script": os.path.join(BASE_DIR, "Modules", "Historical_data_processor", "total_volume_24h.py")
+                "script": os.path.join(BASE_DIR, "total_volume_24h.py")
             },
             {
                 "name": "volume_10h",
-                "script": os.path.join(BASE_DIR, "Modules", "Historical_data_processor", "volume_10h.py")
+                "script": os.path.join(BASE_DIR, "volume_10h.py")
             },
             {
                 "name": "volume_10m",
-                "script": os.path.join(BASE_DIR, "Modules", "Historical_data_processor", "volume_10m.py")
+                "script": os.path.join(BASE_DIR, "volume_10m.py")
             },
             {
                 "name": "ticker_analytics",
-                "script": os.path.join(BASE_DIR, "Modules", "Ticker_analytics", "ticker_analytics.py")
+                "script": os.path.join(BASE_DIR, "ticker_analytics.py")
             },
             {
                 "name": "buy_price_writer",
-                "script": os.path.join(BASE_DIR, "Modules", "Strategy_tester", "buy_price_writer.py")
+                "script": os.path.join(BASE_DIR, "buy_price_writer.py")
             },
             {
                 "name": "alerts_copy",
-                "script": os.path.join(BASE_DIR, "Modules", "Strategy_tester", "alerts_copy.py")
+                "script": os.path.join(BASE_DIR, "alerts_copy.py")
             },
             {
                 "name": "calculator",
-                "script": os.path.join(BASE_DIR, "Modules", "Strategy_tester", "calculator.py")
+                "script": os.path.join(BASE_DIR, "calculator.py")
             },
             {
                 "name": "alert_metrics_monitor",
-                "script": os.path.join(BASE_DIR, "Modules", "Metrics", "alert_metrics_monitor.py")
+                "script": os.path.join(BASE_DIR, "alert_metrics_monitor.py")
             }
         ]
         
         for config in background_config:
-            
+
             try:
                 # Проверяем существование файла
                 if not os.path.exists(config["script"]):
-                    print(MAIN_SCRIPT_NAME + f"❌ Файл не найден: {config['script']}")
+                    logger.error(MAIN_SCRIPT_NAME + f"❌ Файл не найден: {config['script']}")
                     continue
 
                 # Формируем команду для Windows (используем python вместо python3)
@@ -99,27 +97,28 @@ class ScriptStarter:
                     "process": process,
                     "script": config["script"]
                 })
-
-                print(MAIN_SCRIPT_NAME + f"✅ Запущен фоновый скрипт: {config['name']} (PID: {process.pid})")
+ 
+                logger.info(MAIN_SCRIPT_NAME + f"✅ Запущен фоновый скрипт: {config['name']} (PID: {process.pid})")
                 
                 # Даем время на инициализацию
                 time.sleep(1)
                 
             except Exception as e:
-                print(MAIN_SCRIPT_NAME + f"❌ Ошибка при запуске {config['name']}: {e}")
+                logger.error(MAIN_SCRIPT_NAME + f"❌ Ошибка при запуске {config['name']}: {e}")
     
     def run_data_collector(self):
         """Запускает основной скрипт сбора данных (KLD)"""
         try:
-            print("\n======================================\n" + MAIN_SCRIPT_NAME + "Запуск KLD_1M...")
+            logger.info("            :  ======================================")
+            logger.info( MAIN_SCRIPT_NAME + "Запуск KLD_1M...")
             subprocess.run(["python3", KLD_DIR], check=True)
-            print(MAIN_SCRIPT_NAME + "KLD_1M завершил работу.")
+            logger.info(MAIN_SCRIPT_NAME + "KLD_1M завершил работу.")
             
             # После завершения KLD проверяем, не наступил ли новый час
             self.check_and_run_hourly_script()
             
         except subprocess.CalledProcessError as e:
-            print(MAIN_SCRIPT_NAME + f"Ошибка при запуске KLD_1M: {e}")
+            logger.error(MAIN_SCRIPT_NAME + f"Ошибка при запуске KLD_1M: {e}")
     
     def check_and_run_hourly_script(self):
         """Проверяет, наступил ли новый час, и если да - запускает часовой скрипт"""
@@ -127,7 +126,7 @@ class ScriptStarter:
         current_time = datetime.datetime.now().strftime("%H:%M:%S")
         
         if current_hour != self.last_hour_check:
-            print(MAIN_SCRIPT_NAME + f"Запуск HDP_1H...")
+            logger.info(MAIN_SCRIPT_NAME + f"Запуск HDP_1H...")
             
             try:
                 # Запускаем часовой скрипт
@@ -140,14 +139,14 @@ class ScriptStarter:
                 #print(SCRIPT_NAME + f"✅ Часовой скрипт hdp_1h.py успешно выполнен")
                 if result.stdout:
                     #Вывод данных с hdp_1h.py
-                    print(result.stdout)
+                    logger.info(result.stdout)
                 
             except subprocess.CalledProcessError as e:
-                print(MAIN_SCRIPT_NAME + f"❌ Ошибка при запуске hdp_1h.py: {e}")
+                logger.error(MAIN_SCRIPT_NAME + f"❌ Ошибка при запуске hdp_1h.py: {e}")
                 if e.stderr:
-                    print(MAIN_SCRIPT_NAME + f"Ошибка скрипта: {e.stderr}")
+                    logger.error(MAIN_SCRIPT_NAME + f"Ошибка скрипта: {e.stderr}")
             except Exception as e:
-                print(MAIN_SCRIPT_NAME + f"❌ Неожиданная ошибка при запуске hdp_1h.py: {e}")
+                logger.error(MAIN_SCRIPT_NAME + f"❌ Неожиданная ошибка при запуске hdp_1h.py: {e}")
             
             # Обновляем время последней проверки
             self.last_hour_check = current_hour
@@ -160,7 +159,7 @@ class ScriptStarter:
                 process.wait(timeout=5)
             except:
                 process.kill()
-        print(MAIN_SCRIPT_NAME + "Все фоновые процессы остановлены")
+        logger.info(MAIN_SCRIPT_NAME + "Все фоновые процессы остановлены")
 
 # Создаем экземпляр и запускаем
 starter = ScriptStarter()
@@ -171,13 +170,13 @@ starter.start_background_scripts()
 # Планируем периодические задачи
 schedule.every().minute.at(":00").do(starter.run_data_collector)
 
-print(MAIN_SCRIPT_NAME + "Скрипт-стартер запущен. Фоновые процессы активны.")
+logger.info(MAIN_SCRIPT_NAME + "Скрипт-стартер запущен. Фоновые процессы активны.")
 
 try:
     while True:
         schedule.run_pending()
         time.sleep(0.1)
 except KeyboardInterrupt:
-    print(MAIN_SCRIPT_NAME + "Получен сигнал прерывания...")
+    logger.warning(MAIN_SCRIPT_NAME + "Получен сигнал прерывания...")
 finally:
     starter.cleanup()

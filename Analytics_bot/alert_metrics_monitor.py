@@ -7,14 +7,13 @@ from datetime import datetime, timedelta
 import threading
 from pathlib import Path
 from logger import logger
+from config import *
 
-
-SCRIPT_NAME = "A_M_M       :  "                           #Имя скрипта для вывода в консоль
 
 class AlertMetricsProcessor:
     def __init__(self):
-        self.source_dir = "Data/Alerts_calc"
-        self.metrics_dir = "Data/Alerts_calc_metrics"
+        self.source_dir = AMM_source_dir
+        self.metrics_dir = AMM_metrics_dir
         
         # Создаем директорию для метрик, если не существует
         if not os.path.exists(self.metrics_dir):
@@ -39,7 +38,7 @@ class AlertMetricsProcessor:
             files.sort(key=lambda x: x[1], reverse=True)
             return [f[0] for f in files[:3]]
         except Exception as e:
-            logger.error(SCRIPT_NAME + f"Ошибка при получении списка файлов: {e}")
+            logger.error(amm_SCRIPT_NAME + f"Ошибка при получении списка файлов: {e}")
             return []
     
     def wait_for_file_stability(self, filename, timeout=30, check_interval=1):
@@ -59,11 +58,11 @@ class AlertMetricsProcessor:
                         return True
                 last_size = current_size
             except Exception as e:
-                logger.error(SCRIPT_NAME + f"Ошибка при проверке файла {filename}: {e}")
+                logger.error(amm_SCRIPT_NAME + f"Ошибка при проверке файла {filename}: {e}")
                 return False
             time.sleep(check_interval)
         
-        logger.warning(SCRIPT_NAME + f"Таймаут ожидания стабилизации файла {filename}")
+        logger.warning(amm_SCRIPT_NAME + f"Таймаут ожидания стабилизации файла {filename}")
         return False
     
     def process_file(self, filename):
@@ -76,7 +75,7 @@ class AlertMetricsProcessor:
         metrics_path = os.path.join(self.metrics_dir, metrics_filename)
         
         try:
-            print(SCRIPT_NAME + f"Обработка файла: {filename}")
+            print(amm_SCRIPT_NAME + f"Обработка файла: {filename}")
             
             # Читаем CSV файл
             df = pd.read_csv(source_path)
@@ -92,7 +91,7 @@ class AlertMetricsProcessor:
             # Проверяем наличие всех столбцов
             for col in sum_columns:
                 if col not in df.columns:
-                    print(SCRIPT_NAME + f"Предупреждение: столбец {col} не найден в {filename}")
+                    print(amm_SCRIPT_NAME + f"Предупреждение: столбец {col} не найден в {filename}")
             
             # Вычисляем суммы
             sums = []
@@ -171,10 +170,10 @@ class AlertMetricsProcessor:
             
             # Сохраняем в CSV
             metrics_df.to_csv(metrics_path, index=False)
-            logger.info(SCRIPT_NAME + f"Метрики сохранены в: {metrics_filename}")
+            logger.info(amm_SCRIPT_NAME + f"Метрики сохранены в: {metrics_filename}")
             
         except Exception as e:
-            logger.error(SCRIPT_NAME + f"Ошибка при обработке файла {filename}: {e}")
+            logger.error(amm_SCRIPT_NAME + f"Ошибка при обработке файла {filename}: {e}")
     
     def process_all_missing_files(self):
         """Обработка всех файлов, для которых отсутствуют метрики"""
@@ -190,7 +189,7 @@ class AlertMetricsProcessor:
                 metrics_file = f"alerts_calc_metrics_{date_part}.csv"
                 
                 if metrics_file not in existing_metrics:
-                    logger.info(SCRIPT_NAME + "Создание метрик для: {source_file}")
+                    logger.info(amm_SCRIPT_NAME + "Создание метрик для: {source_file}")
                     self.process_file(source_file)
                 else:
                     # Проверяем, нужно ли обновить файл (источник новее метрик)
@@ -202,11 +201,11 @@ class AlertMetricsProcessor:
                         metrics_mtime = os.path.getmtime(metrics_path)
                         
                         if source_mtime > metrics_mtime:
-                            logger.info(SCRIPT_NAME + f"Обновление метрик для: {source_file}")
+                            logger.info(amm_SCRIPT_NAME + f"Обновление метрик для: {source_file}")
                             self.process_file(source_file)
         
         except Exception as e:
-            logger.error(SCRIPT_NAME + f"Ошибка при обработке отсутствующих файлов: {e}")
+            logger.error(amm_SCRIPT_NAME + f"Ошибка при обработке отсутствующих файлов: {e}")
     
     def is_file_new_enough(self, filename):
         """Проверяем, не старше ли файл 3-х дней"""
@@ -236,14 +235,14 @@ class AlertMetricsProcessor:
                 if filename in self.last_modified:
                     if current_mtime != self.last_modified[filename]:
                         # Файл изменился
-                        logger.info(SCRIPT_NAME + f"Файл изменен: {filename}")
+                        logger.info(amm_SCRIPT_NAME + f"Файл изменен: {filename}")
                         if self.wait_for_file_stability(filename):
                             self.process_file(filename)
                             self.last_modified[filename] = current_mtime
                 else:
                     # Новый файл в списке самых новых
                     self.last_modified[filename] = current_mtime
-                    logger.info(SCRIPT_NAME + f"Новый файл в списке самых новых: {filename}")
+                    logger.info(amm_SCRIPT_NAME + f"Новый файл в списке самых новых: {filename}")
                     if self.wait_for_file_stability(filename):
                         self.process_file(filename)
 
@@ -261,7 +260,7 @@ class AlertFileHandler(FileSystemEventHandler):
             if filename.startswith("alerts_calc_"):
                 current_time = time.time()
                 if current_time - self.last_event_time > self.debounce_time:
-                    logger.info(SCRIPT_NAME + f"Создан новый файл: {filename}")
+                    logger.info(amm_SCRIPT_NAME + f"Создан новый файл: {filename}")
                     time.sleep(1)  # Короткая задержка для записи файла
                     self.processor.check_and_process_newest_files()
                     self.last_event_time = current_time
@@ -275,19 +274,19 @@ class AlertFileHandler(FileSystemEventHandler):
                     # Проверяем, является ли файл одним из трех самых новых
                     newest_files = self.processor.get_three_newest_files()
                     if filename in newest_files and self.processor.is_file_new_enough(filename):
-                        logger.info(SCRIPT_NAME + f"Изменен файл из списка самых новых: {filename}")
+                        logger.info(amm_SCRIPT_NAME + f"Изменен файл из списка самых новых: {filename}")
                         self.processor.check_and_process_newest_files()
                         self.last_event_time = current_time
 
 
 def main():
-    logger.info(SCRIPT_NAME + "Запуск мониторинга папки Alerts_calc...")
+    logger.info(amm_SCRIPT_NAME + "Запуск мониторинга папки Alerts_calc...")
     
     # Инициализируем процессор
     processor = AlertMetricsProcessor()
     
     # Обрабатываем все отсутствующие файлы при запуске
-    logger.info(SCRIPT_NAME + "Проверка отсутствующих метрик...")
+    logger.info(amm_SCRIPT_NAME + "Проверка отсутствующих метрик...")
     processor.process_all_missing_files()
     
     # Настраиваем наблюдатель
@@ -296,7 +295,7 @@ def main():
     observer.schedule(event_handler, processor.source_dir, recursive=False)
     observer.start()
     
-    logger.info(SCRIPT_NAME + f"Мониторинг запущен для папки: {processor.source_dir}")
+    logger.info(amm_SCRIPT_NAME + f"Мониторинг запущен для папки: {processor.source_dir}")
     #print(SCRIPT_NAME + "Нажмите Ctrl+C для остановки...")
     
     try:
@@ -306,11 +305,11 @@ def main():
             processor.check_and_process_newest_files()
             
     except KeyboardInterrupt:
-        logger.info(SCRIPT_NAME + "\nОстановка мониторинга...")
+        logger.info(amm_SCRIPT_NAME + "\nОстановка мониторинга...")
         observer.stop()
     
     observer.join()
-    logger.info(SCRIPT_NAME + "Мониторинг остановлен.")
+    logger.info(amm_SCRIPT_NAME + "Мониторинг остановлен.")
 
 
 if __name__ == "__main__":

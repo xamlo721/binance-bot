@@ -8,24 +8,21 @@ import glob
 from concurrent.futures import ThreadPoolExecutor
 import warnings
 from logger import logger
+from config import *
 
 
 warnings.filterwarnings('ignore')
 
-# Настройки
-SCRIPT_NAME = "HDP_DYN     :  "                                 # Имя скрипта для вывода в консоль
-K_LINES_DIR = "Data/K_lines/1M"                 # Папка с минутными свечами
-RESULTS_DIR = "Data/K_lines/Dynamic"            # Папка с результатом
 MAX_RESULT_FILES = 1                                            # Максимум файлов результата
 
 def ensure_directories():
     """Создает необходимые директории если они не существуют"""
-    Path(K_LINES_DIR).mkdir(exist_ok=True)
-    Path(RESULTS_DIR).mkdir(exist_ok=True)
+    Path(hdr_1h_K_LINES_DIR).mkdir(exist_ok=True)
+    Path(hdr_1h_RESULTS_DIR).mkdir(exist_ok=True)
 
 def get_sorted_files():
     """Возвращает отсортированный список самых новых файлов по имени"""
-    files = glob.glob(os.path.join(K_LINES_DIR, "K_line_*.csv"))
+    files = glob.glob(os.path.join(hdr_1h_K_LINES_DIR, "K_line_*.csv"))
     # Сортируем файлы по имени (предполагая, что в имени есть timestamp)
     files_sorted = sorted(files)
     # Количество обрабатываемых файлов равно текущей минуте
@@ -48,12 +45,12 @@ def read_file(file):
         # Проверяем, что все требуемые колонки присутствуют
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
-            logger.error(SCRIPT_NAME + f"В файле {file} отсутствуют колонки: {missing_columns}")
+            logger.error(hdr_dyn_SCRIPT_NAME + f"В файле {file} отсутствуют колонки: {missing_columns}")
             return None
         df = df[required_columns]
         return df
     except Exception as e:
-        logger.error(SCRIPT_NAME + f"Ошибка чтения файла {file}: {e}")
+        logger.error(hdr_dyn_SCRIPT_NAME + f"Ошибка чтения файла {file}: {e}")
         return None
 
 def process_new_data():
@@ -69,14 +66,14 @@ def process_new_data():
                 all_data.append(result)
     
     if not all_data:
-        logger.info(SCRIPT_NAME + "Нет данных для обработки")
+        logger.info(hdr_dyn_SCRIPT_NAME + "Нет данных для обработки")
         return False
     
     # Объединение данных одним вызовом
     combined_df = pd.concat(all_data, ignore_index=True)
     
     if combined_df.empty:
-        logger.info(SCRIPT_NAME + "Объединенные данные пусты")
+        logger.info(hdr_dyn_SCRIPT_NAME + "Объединенные данные пусты")
         return False
     
     # Добавляем волатильность
@@ -126,7 +123,7 @@ def process_new_data():
 
     # Формируем имя файла с текущей датой и временем
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_file = os.path.join(RESULTS_DIR, f"Historical_values_dynamic_{timestamp}.csv")
+    output_file = os.path.join(hdr_1h_RESULTS_DIR, f"Historical_values_dynamic_{timestamp}.csv")
     # Сохраняем результаты
     result_df.to_csv(output_file, index=False)
     
@@ -139,7 +136,7 @@ def process_new_data():
 
 def cleanup_result_files():
     """Удаляет старые файлы результатов если их больше MAX_RESULT_FILES"""
-    files = glob.glob(os.path.join(RESULTS_DIR, "Historical_values_dynamic_*.csv"))
+    files = glob.glob(os.path.join(hdr_1h_RESULTS_DIR, "Historical_values_dynamic_*.csv"))
     files.sort()
     
     while len(files) >= MAX_RESULT_FILES + 1:
@@ -148,28 +145,28 @@ def cleanup_result_files():
             os.remove(oldest_file)
             #print(SCRIPT_NAME + f"Удален старый файл: {os.path.basename(oldest_file)}")
         except OSError as e:
-            logger.error(SCRIPT_NAME + f"Ошибка удаления файла {oldest_file}: {e}")
+            logger.error(hdr_dyn_SCRIPT_NAME + f"Ошибка удаления файла {oldest_file}: {e}")
 
 def run_processing():
     """Функция для однократного запуска обработки"""
-    logger.info(SCRIPT_NAME + "Запуск обработки данных...")
+    logger.info(hdr_dyn_SCRIPT_NAME + "Запуск обработки данных...")
     ensure_directories()
     
     all_files = get_sorted_files()
     if not all_files:
-        logger.warning(SCRIPT_NAME + "Нет файлов для обработки в директории")
+        logger.warning(hdr_dyn_SCRIPT_NAME + "Нет файлов для обработки в директории")
         return False
     
-    logger.info(SCRIPT_NAME + f"Найдено файлов для обработки: {len(all_files)}")
+    logger.info(hdr_dyn_SCRIPT_NAME + f"Найдено файлов для обработки: {len(all_files)}")
     
     start_time = time.time()
     success = process_new_data()
     end_time = time.time()
     
     if success:
-        logger.info(SCRIPT_NAME + f"Обработка завершена успешно за {end_time - start_time:.2f} секунд")
+        logger.info(hdr_dyn_SCRIPT_NAME + f"Обработка завершена успешно за {end_time - start_time:.2f} секунд")
     else:
-        logger.warning(SCRIPT_NAME + "Обработка завершена с ошибками")
+        logger.warning(hdr_dyn_SCRIPT_NAME + "Обработка завершена с ошибками")
     
     return success
 

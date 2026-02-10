@@ -7,9 +7,10 @@ import os
 import glob
 from datetime import datetime
 from logger import logger
+# from config import *
 
-SCRIPT_NAME = "KLD_1M      :  "                       # Имя скрипта для вывода в консоль
-K_LINES_DIR = "Data/K_lines/1M"     # Папка с минутными свечами
+k_line_SCRIPT_NAME = "KLD_1M      :  "                       # Имя скрипта для вывода в консоль
+k_K_LINES_DIR = "Data/K_lines/1M"     # Папка с минутными свечами
 CLEAN_OLD_FILES = 180                               # Max файлов в папке
 
 
@@ -31,7 +32,7 @@ def get_trading_symbols():
         
         return symbols
     except Exception as e:
-        logger.error(SCRIPT_NAME + f"Ошибка при получении списка тикеров: {str(e)}")
+        logger.error(k_line_SCRIPT_NAME + f"Ошибка при получении списка тикеров: {str(e)}")
         return []
 
 async def fetch_volume(session, symbol, semaphore):
@@ -72,11 +73,11 @@ async def fetch_volume(session, symbol, semaphore):
                                 'open_time': kline[0]                           # Open time - время открытия свечи
                             }
                 else:
-                    logger.error(SCRIPT_NAME + f"Ошибка HTTP {response.status} для {symbol}")
+                    logger.error(k_line_SCRIPT_NAME + f"Ошибка HTTP {response.status} для {symbol}")
         except asyncio.TimeoutError:
-            logger.error(SCRIPT_NAME + f"Таймаут для {symbol}")
+            logger.error(k_line_SCRIPT_NAME + f"Таймаут для {symbol}")
         except Exception as e:
-            logger.error(SCRIPT_NAME + f"Ошибка для {symbol}: {str(e)}")
+            logger.error(k_line_SCRIPT_NAME + f"Ошибка для {symbol}: {str(e)}")
         
         return None
 
@@ -98,14 +99,14 @@ async def fetch_all_volumes(symbols, max_concurrent=100):
                 results.append(result)
             completed += 1
             if completed % 1000 == 0:
-                logger.info(SCRIPT_NAME + f"Обработано {completed}/{len(symbols)} тикеров")
+                logger.info(k_line_SCRIPT_NAME + f"Обработано {completed}/{len(symbols)} тикеров")
         
         return results
 
 def save_to_csv(results):
     """Сохранение результатов в CSV с именем на основе времени открытия свечи"""
     if not results:
-        logger.info(SCRIPT_NAME + "Нет данных для сохранения")
+        logger.info(k_line_SCRIPT_NAME + "Нет данных для сохранения")
         return None
     
     # Получаем время открытия свечи из первого результата
@@ -114,7 +115,7 @@ def save_to_csv(results):
     filename = f"K_line_{open_time_dt.strftime('%Y%m%d_%H%M%S')}.csv"
     
     # Создаем папку K_lines, если её нет
-    folder = K_LINES_DIR
+    folder = k_K_LINES_DIR
     if not os.path.exists(folder):
         os.makedirs(folder)
     
@@ -148,7 +149,7 @@ def save_to_csv(results):
 
 def cleanup_old_files(max_files=20):
     """Удаление старых файлов, оставляя только max_files самых новых"""
-    folder = K_LINES_DIR
+    folder = k_K_LINES_DIR
     if not os.path.exists(folder):
         return
     
@@ -169,15 +170,15 @@ async def main():
     start_time = time.time()
     symbols = get_trading_symbols()
     if not symbols:
-        logger.error(SCRIPT_NAME + "Не удалось получить список тикеров")
+        logger.error(k_line_SCRIPT_NAME + "Не удалось получить список тикеров")
         return
         
-    logger.info(SCRIPT_NAME + f"Найдено торгующихся тикеров: {len(symbols)}")
+    logger.info(k_line_SCRIPT_NAME + f"Найдено торгующихся тикеров: {len(symbols)}")
     
     results = await fetch_all_volumes(symbols, max_concurrent=200)
     
     if not results:
-        logger.error(SCRIPT_NAME + "Не удалось получить данные по тикерам")
+        logger.error(k_line_SCRIPT_NAME + "Не удалось получить данные по тикерам")
         return
     
     filepath = save_to_csv(results)
@@ -186,8 +187,8 @@ async def main():
         # Max Количество файлов
         cleanup_old_files(CLEAN_OLD_FILES)
         end_time = time.time()
-        logger.info(SCRIPT_NAME + f"Готово! Обработано {len(results)} тикеров за {end_time - start_time:.2f} секунд")
-        logger.info(SCRIPT_NAME + f"Данные сохранены в файл: {filepath}")
+        logger.info(k_line_SCRIPT_NAME + f"Готово! Обработано {len(results)} тикеров за {end_time - start_time:.2f} секунд")
+        logger.info(k_line_SCRIPT_NAME + f"Данные сохранены в файл: {filepath}")
 
 if __name__ == "__main__":
     asyncio.run(main())

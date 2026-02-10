@@ -6,17 +6,11 @@ from watchdog.events import FileSystemEventHandler
 import glob
 import subprocess
 from logger import logger
+from config import *
 
-# Настройки
-SCRIPT_NAME = "LB_12H      :  "                                                             # Имя скрипта для вывода в консоль
-AGR_12H_FOLDER = "Data/Agr_12h"                                             # Папка с историческими агрегированными данными
-K_LINES_DIR = "Data/K_lines/1M"                                             # Папка с минутными свечами
-OUTPUT_FOLDER = "Data/Ticker_up"                                            # Папка с результатом
-MAX_RESULT_FILES = 2                                                                        # Максимум файлов результата
-HDP_SCRIPT_PATH = "hdp_dynamic.py"        # Путь к скрипту hdp_dynamic.py
 
 # Создаем выходную папку если она не существует
-os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+os.makedirs(lb_OUTPUT_FOLDER, exist_ok=True)
 
 class KLineFileHandler(FileSystemEventHandler):
     def __init__(self):
@@ -26,30 +20,30 @@ class KLineFileHandler(FileSystemEventHandler):
     def on_created(self, event):
         if not event.is_directory and event.src_path.endswith('.csv'):
             filename = os.path.basename(event.src_path)
-            logger.info(SCRIPT_NAME + f"Обнаружен новый файл: {filename}")
+            logger.info(lb_SCRIPT_NAME + f"Обнаружен новый файл: {filename}")
             self.process_file(event.src_path)
     
     def on_modified(self, event):
         if not event.is_directory and event.src_path.endswith('.csv'):
             # Обрабатываем только если файл еще не обрабатывался
             if event.src_path not in self.processed_files:
-                logger.info(SCRIPT_NAME + f"Файл изменен: {event.src_path}")
+                logger.info(lb_SCRIPT_NAME + f"Файл изменен: {event.src_path}")
                 self.process_file(event.src_path)
     
     def get_latest_aggregated_file(self):
         """Находит самый свежий файл в папке Agr_12h"""
         try:
-            agg_files = glob.glob(os.path.join(AGR_12H_FOLDER, "Aggregated_high_*.csv"))
+            agg_files = glob.glob(os.path.join(lb_12H_FOLDER, "Aggregated_high_*.csv"))
             if not agg_files:
-                logger.warning(SCRIPT_NAME + "Не найдены файлы aggregated high")
+                logger.warning(lb_SCRIPT_NAME + "Не найдены файлы aggregated high")
                 return None
             
             latest_file = max(agg_files, key=os.path.getctime)
             file_name = os.path.basename(latest_file)
-            logger.info(SCRIPT_NAME + f"Используется aggregated файл: {file_name}")
+            logger.info(lb_SCRIPT_NAME + f"Используется aggregated файл: {file_name}")
             return latest_file
         except Exception as e:
-            logger.error(SCRIPT_NAME + f"Ошибка при поиске aggregated файла: {e}")
+            logger.error(lb_SCRIPT_NAME + f"Ошибка при поиске aggregated файла: {e}")
             return None
     
     def wait_for_file_stability(self, file_path, check_interval=1, max_attempts=30):
@@ -64,10 +58,10 @@ class KLineFileHandler(FileSystemEventHandler):
                     #print(SCRIPT_NAME + f"Файл стабилизировался после {attempt + 1} проверок")
                     return True
             except OSError as e:
-                logger.error(SCRIPT_NAME + f"Ошибка при проверке размера файла: {e}")
+                logger.error(lb_SCRIPT_NAME + f"Ошибка при проверке размера файла: {e}")
                 time.sleep(check_interval)
         
-        logger.error(SCRIPT_NAME + f"Файл не стабилизировался после {max_attempts} попыток")
+        logger.error(lb_SCRIPT_NAME + f"Файл не стабилизировался после {max_attempts} попыток")
         return False
     
     def read_csv_safe(self, file_path):
@@ -75,21 +69,21 @@ class KLineFileHandler(FileSystemEventHandler):
         try:
             return pd.read_csv(file_path)
         except Exception as e:
-            logger.error(SCRIPT_NAME + f"Ошибка чтения файла {file_path}: {e}")
+            logger.error(lb_SCRIPT_NAME + f"Ошибка чтения файла {file_path}: {e}")
             return None
     
     # Запуск скрипта hdp_dynamic.py
     def run_hdp_dynamic_script(self):
         """Запускает скрипт hdp_dynamic.py"""
         try:
-            print(SCRIPT_NAME + "Запуск HDP_DYN...")
+            print(lb_SCRIPT_NAME + "Запуск HDP_DYN...")
             
             # Запускаем скрипт и ждем его завершения
             result = subprocess.run(
-                ['python3', HDP_SCRIPT_PATH], 
+                ['python3', lb_HDP_SCRIPT_PATH], 
                 capture_output=True, 
                 text=True, 
-                cwd=os.path.dirname(HDP_SCRIPT_PATH)
+                cwd=os.path.dirname(lb_HDP_SCRIPT_PATH)
             )
             
             if result.returncode == 0:
@@ -98,12 +92,12 @@ class KLineFileHandler(FileSystemEventHandler):
                     output = result.stdout.strip()
                     logger.info(output)
             else:
-                logger.error(SCRIPT_NAME + f"Ошибка выполнения HDP_DYN. Код возврата: {result.returncode}")
+                logger.error(lb_SCRIPT_NAME + f"Ошибка выполнения HDP_DYN. Код возврата: {result.returncode}")
                 if result.stderr:
-                    logger.error(SCRIPT_NAME + f"Ошибка: {result.stderr}")
+                    logger.error(lb_SCRIPT_NAME + f"Ошибка: {result.stderr}")
                     
         except Exception as e:
-            logger.error(SCRIPT_NAME + f"Исключение при запуске скрипта HDP_DYN: {e}")
+            logger.error(lb_SCRIPT_NAME + f"Исключение при запуске скрипта HDP_DYN: {e}")
 
     # Обработка K-Line файла 
     def process_file(self, k_line_file_path):
@@ -124,7 +118,7 @@ class KLineFileHandler(FileSystemEventHandler):
         
         # ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: ждем стабилизации aggregated файла тоже
         if not self.wait_for_file_stability(aggregated_file):
-            logger.error(SCRIPT_NAME + f"Aggregated файл не стабилизировался: {aggregated_file}")
+            logger.error(lb_SCRIPT_NAME + f"Aggregated файл не стабилизировался: {aggregated_file}")
             return
 
 
@@ -139,11 +133,11 @@ class KLineFileHandler(FileSystemEventHandler):
         
         # Проверяем наличие необходимых колонок
         if 'symbol' not in k_line_data.columns or 'close' not in k_line_data.columns:
-            logger.error(SCRIPT_NAME + "В K-line файле отсутствуют необходимые колонки 'symbol' или 'close'")
+            logger.error(lb_SCRIPT_NAME + "В K-line файле отсутствуют необходимые колонки 'symbol' или 'close'")
             return
         
         if 'symbol' not in aggregated_data.columns or 'high' not in aggregated_data.columns:
-            logger.error(SCRIPT_NAME + "В aggregated файле отсутствуют необходимые колонки 'symbol' или 'high'")
+            logger.error(lb_SCRIPT_NAME + "В aggregated файле отсутствуют необходимые колонки 'symbol' или 'high'")
             return
         
         # Объединяем данные по symbol
@@ -164,25 +158,25 @@ class KLineFileHandler(FileSystemEventHandler):
             tickers_up = tickers_up.sort_values('difference', ascending=False)
             
             # Выводим в консоль
-            logger.info(SCRIPT_NAME + "="*60)
-            logger.info(SCRIPT_NAME + f"НАЙДЕНО ТИКЕРОВ С ПРЕВЫШЕНИЕМ HIGH - {len(tickers_up)}:")
+            logger.info(lb_SCRIPT_NAME + "="*60)
+            logger.info(lb_SCRIPT_NAME + f"НАЙДЕНО ТИКЕРОВ С ПРЕВЫШЕНИЕМ HIGH - {len(tickers_up)}:")
             #print(SCRIPT_NAME + "="*60)
-            logger.info(SCRIPT_NAME + ", ".join(tickers_up['symbol'].tolist()))
+            logger.info(lb_SCRIPT_NAME + ", ".join(tickers_up['symbol'].tolist()))
             #for _, row in tickers_up.iterrows():
                 #print(SCRIPT_NAME + f"{row['symbol']}: close={row['close']:.6f}, high={row['high']:.6f}, diff={row['difference']:.6f}")
             #    print(SCRIPT_NAME + f"{row['symbol']}")
-            logger.info(SCRIPT_NAME + "="*60)
+            logger.info(lb_SCRIPT_NAME + "="*60)
             
             # Сохраняем в файл
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             output_filename = f"tickers_up_{timestamp}.csv"
-            output_path = os.path.join(OUTPUT_FOLDER, output_filename)
+            output_path = os.path.join(lb_OUTPUT_FOLDER, output_filename)
             
             tickers_up[['symbol']].to_csv(output_path, index=False)
             #print(SCRIPT_NAME + f"Список сохранен в: {output_path}")
             #print(SCRIPT_NAME + f"Найдено тикеров: {len(tickers_up)}")
         else:
-            logger.error(SCRIPT_NAME + "Тикеров с превышением high не найдено")
+            logger.error(lb_SCRIPT_NAME + "Тикеров с превышением high не найдено")
         
         # Помечаем файл как обработанный
         self.processed_files.add(k_line_file_path)
@@ -196,41 +190,41 @@ class KLineFileHandler(FileSystemEventHandler):
         
 def cleanup_result_files():
     """Удаляет старые файлы результатов если их больше MAX_RESULT_FILES"""
-    files = glob.glob(os.path.join(OUTPUT_FOLDER, "tickers_up_*.csv"))
+    files = glob.glob(os.path.join(lb_OUTPUT_FOLDER, "tickers_up_*.csv"))
     files.sort()
     
-    while len(files) >= MAX_RESULT_FILES + 1:
+    while len(files) >= lb_MAX_RESULT_FILES + 1:
         oldest_file = files.pop(0)
         try:
             os.remove(oldest_file)
             #print(SCRIPT_NAME + f"Удален старый файл: {os.path.basename(oldest_file)}")
         except OSError as e:
-            logger.error(SCRIPT_NAME + f"Ошибка удаления файла {oldest_file}: {e}")
+            logger.error(lb_SCRIPT_NAME + f"Ошибка удаления файла {oldest_file}: {e}")
 
 def main():
     # Проверяем существование директорий
-    for directory in [AGR_12H_FOLDER, K_LINES_DIR]:
+    for directory in [lb_12H_FOLDER, lb_K_LINES_DIR]:
         if not os.path.exists(directory):
-            logger.error(SCRIPT_NAME + f"Ошибка: директория {directory} не существует")
+            logger.error(lb_SCRIPT_NAME + f"Ошибка: директория {directory} не существует")
             return
         
     # Проверяем существование скрипта hdp_dynamic.py
-    if not os.path.exists(HDP_SCRIPT_PATH):
-        logger.warning(SCRIPT_NAME + f"Предупреждение: скрипт {HDP_SCRIPT_PATH} не найден")
+    if not os.path.exists(lb_HDP_SCRIPT_PATH):
+        logger.warning(lb_SCRIPT_NAME + f"Предупреждение: скрипт {lb_HDP_SCRIPT_PATH} не найден")
         
-    logger.info(SCRIPT_NAME + "Запуск мониторинга K-line файлов...")
+    logger.info(lb_SCRIPT_NAME + "Запуск мониторинга K-line файлов...")
     
     # Создаем и запускаем наблюдатель
     event_handler = KLineFileHandler()
     observer = Observer()
-    observer.schedule(event_handler, K_LINES_DIR, recursive=False)
+    observer.schedule(event_handler, lb_K_LINES_DIR, recursive=False)
     observer.start()
     
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        logger.info(SCRIPT_NAME + "\nОстановка мониторинга...")
+        logger.info(lb_SCRIPT_NAME + "\nОстановка мониторинга...")
         observer.stop()
     
     observer.join()

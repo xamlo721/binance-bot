@@ -10,14 +10,7 @@ import glob
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from logger import logger
-
-# Настройки
-SCRIPT_NAME = "AGR_12H     :  "
-K_LINES_1H_DIR = "Data/K_lines/1H"                  # Папка с часовыми свечами
-K_LINES_DIN_DIR = "Data/K_lines/Dynamic"            # Папка с динамическим файлом
-OUTPUT_FOLDER = "Data/Agr_12h"                      # Папка с результатом
-H_COUNT = 11                                                        # Количество файлов обработки
-MAX_RESULT_FILES = 2                                                # Максимум файлов результата
+from config import *
 
 class CSVFileHandler(FileSystemEventHandler):
     def __init__(self):
@@ -33,7 +26,7 @@ class CSVFileHandler(FileSystemEventHandler):
         file_path = event.src_path
         if file_path.endswith('.csv') and 'Historical_values_dynamic' in file_path:
             file_name = Path(file_path).name
-            logger.info(SCRIPT_NAME + f"Обнаружен новый файл: {file_name}")
+            logger.info(agr_SCRIPT_NAME + f"Обнаружен новый файл: {file_name}")
             self.process_file(file_path)
     
     def wait_for_file_stability(self, file_path, check_interval=0.5, max_attempts=15):  # Уменьшено время ожидания
@@ -58,14 +51,14 @@ class CSVFileHandler(FileSystemEventHandler):
                 time.sleep(check_interval)
                 attempts += 1
             except Exception as e:
-                logger.error(SCRIPT_NAME + f"Ошибка при проверке стабильности файла: {e}")
+                logger.error(agr_SCRIPT_NAME + f"Ошибка при проверке стабильности файла: {e}")
                 time.sleep(check_interval)
                 attempts += 1
         
-        logger.warning(SCRIPT_NAME + "Превышено время ожидания стабилизации файла")
+        logger.warning(agr_SCRIPT_NAME + "Превышено время ожидания стабилизации файла")
         return False
     
-    def get_latest_h1_files(self, count=H_COUNT):
+    def get_latest_h1_files(self, count=agr_H_COUNT):
         """Получает самые свежие часовые файлы с кэшированием"""
         current_time = time.time()
 
@@ -73,9 +66,9 @@ class CSVFileHandler(FileSystemEventHandler):
         #NEW_H_COUNT = H_COUNT
         MINUTE = datetime.now().minute
         if MINUTE == 0:
-            count = H_COUNT + 1
+            count = agr_H_COUNT + 1
 
-        logger.info(SCRIPT_NAME + f"Будет обработано {count} часовых файлов")
+        logger.info(agr_SCRIPT_NAME + f"Будет обработано {count} часовых файлов")
 
         # Используем кэш, если он еще актуален
         if (self._h1_files_cache and 
@@ -84,7 +77,7 @@ class CSVFileHandler(FileSystemEventHandler):
         
         try:
             # Используем glob для более быстрого поиска файлов
-            pattern = os.path.join(K_LINES_1H_DIR, "*Historical_values_1h*.csv")
+            pattern = os.path.join(aggr_K_LINES_1H_DIR, "*Historical_values_1h*.csv")
             h1_files = glob.glob(pattern)
             
             # Получаем время создания без сортировки всех файлов
@@ -107,7 +100,7 @@ class CSVFileHandler(FileSystemEventHandler):
             return result_files
         
         except Exception as e:
-            logger.error(SCRIPT_NAME + f"Ошибка при получении часовых файлов: {e}")
+            logger.error(agr_SCRIPT_NAME + f"Ошибка при получении часовых файлов: {e}")
             return []
     
     def process_single_file(self, file_path):
@@ -125,7 +118,7 @@ class CSVFileHandler(FileSystemEventHandler):
             return max_highs.to_dict()
             
         except Exception as e:
-            logger.error(SCRIPT_NAME + f"Ошибка при обработке файла {file_path}: {e}")
+            logger.error(agr_SCRIPT_NAME + f"Ошибка при обработке файла {file_path}: {e}")
             return {}
     
     def extract_timestamp(self, filename):
@@ -147,7 +140,7 @@ class CSVFileHandler(FileSystemEventHandler):
             #print(SCRIPT_NAME + f"Найдено {len(h1_files)} часовых файлов для обработки")
             
             if not h1_files:
-                print(SCRIPT_NAME + "Не найдено часовых файлов для обработки")
+                print(agr_SCRIPT_NAME + "Не найдено часовых файлов для обработки")
                 return
             
             # Список всех файлов для обработки
@@ -177,47 +170,47 @@ class CSVFileHandler(FileSystemEventHandler):
                 # Создаем имя для выходного файла
                 timestamp = self.extract_timestamp(os.path.basename(dynamic_file_path))
                 output_filename = f"Aggregated_high_{timestamp}.csv"
-                output_path = os.path.join(OUTPUT_FOLDER, output_filename)
+                output_path = os.path.join(aggr_OUTPUT_FOLDER, output_filename)
                 
                 # Сохраняем результат
-                os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+                os.makedirs(aggr_OUTPUT_FOLDER, exist_ok=True)
                 result_df.to_csv(output_path, index=False)
                 #print(SCRIPT_NAME + f"Результат сохранен в: {output_path}")
-                logger.info(SCRIPT_NAME + f"Обработано тикеров: {len(result_df)}")
+                logger.info(agr_SCRIPT_NAME + f"Обработано тикеров: {len(result_df)}")
             else:
-                logger.info(SCRIPT_NAME + "Нет данных для сохранения")
+                logger.info(agr_SCRIPT_NAME + "Нет данных для сохранения")
             
             # Очищаем старые файлы
             cleanup_result_files() 
             
         except Exception as e:
-            logger.error(SCRIPT_NAME + f"Ошибка при обработке файла {dynamic_file_path}: {e}")
+            logger.error(agr_SCRIPT_NAME + f"Ошибка при обработке файла {dynamic_file_path}: {e}")
 
 
 def cleanup_result_files():
     """Удаляет старые файлы результатов если их больше MAX_RESULT_FILES"""
-    files = glob.glob(os.path.join(OUTPUT_FOLDER, "Aggregated_high_*.csv"))
+    files = glob.glob(os.path.join(aggr_OUTPUT_FOLDER, "Aggregated_high_*.csv"))
     files.sort()
     
-    while len(files) >= MAX_RESULT_FILES + 1:
+    while len(files) >= agr_MAX_RESULT_FILES + 1:
         oldest_file = files.pop(0)
         try:
             os.remove(oldest_file)
             #print(SCRIPT_NAME + f"Удален старый файл: {os.path.basename(oldest_file)}")
         except OSError as e:
-            logger.error(SCRIPT_NAME + f"Ошибка удаления файла {oldest_file}: {e}")
+            logger.error(agr_SCRIPT_NAME + f"Ошибка удаления файла {oldest_file}: {e}")
 
 
 def main():
     # Создаем папки если они не существуют
-    for folder in [K_LINES_DIN_DIR, K_LINES_1H_DIR, OUTPUT_FOLDER]:
+    for folder in [aggr_K_LINES_DIN_DIR, aggr_K_LINES_1H_DIR, aggr_OUTPUT_FOLDER]:
         os.makedirs(folder, exist_ok=True)
     
     # Создаем и запускаем наблюдатель
     event_handler = CSVFileHandler()
     observer = Observer()
-    observer.schedule(event_handler, K_LINES_DIN_DIR, recursive=False)
-    logger.info(SCRIPT_NAME + f"Мониторинг запущен...")
+    observer.schedule(event_handler, aggr_K_LINES_DIN_DIR, recursive=False)
+    logger.info(agr_SCRIPT_NAME + f"Мониторинг запущен...")
     
     try:
         observer.start()
@@ -225,7 +218,7 @@ def main():
             time.sleep(1)
     except KeyboardInterrupt:
         observer.stop()
-        logger.info(SCRIPT_NAME + "Мониторинг остановлен")
+        logger.info(agr_SCRIPT_NAME + "Мониторинг остановлен")
     
     observer.join()
 

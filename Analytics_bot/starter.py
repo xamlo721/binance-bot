@@ -6,18 +6,15 @@ import os
 import sys
 
 from logger import logger
-from pathlib import Path
+from config import *
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+src_path = os.path.dirname(os.path.abspath(__file__))
 
 # Папка с KLD
-KLD_DIR = os.path.join(BASE_DIR, "k_line_downloader.py")    
+KLD_DIR = os.path.join(src_path, "k_line_downloader.py")    
 
 # Папка с HDP_1H
-HDP_1H_DIR = os.path.join(BASE_DIR, "hdp_1h.py")                
-
-# Имя этого скрипта для вывода в консоль
-MAIN_SCRIPT_NAME = "STARTER     :  "                                                                       
+HDP_1H_DIR = os.path.join(src_path, "hdp_1h.py")                
 
 class ScriptStarter:
     def __init__(self):
@@ -25,47 +22,47 @@ class ScriptStarter:
         self.last_hour_check = datetime.datetime.now().hour  # Запоминаем текущий час при инициализации
         
     def start_background_scripts(self):
-        """Запускает все фоновые скрипты"""
+        """Запускает все фоновые скрипты""" 
         background_config = [
             {
                 "name": "Agregator_12h",
-                "script": os.path.join(BASE_DIR, "agregator_12h.py"),
+                "script": os.path.join(src_path, "agregator_12h.py"),
             },
             {
                 "name": "Level_breakout_12h", 
-                "script": os.path.join(BASE_DIR, "level_breakout_12h.py"),
+                "script": os.path.join(src_path, "level_breakout_12h.py"),
             },
             {
                 "name": "total_volume_24h",
-                "script": os.path.join(BASE_DIR, "total_volume_24h.py")
+                "script": os.path.join(src_path, "total_volume_24h.py")
             },
             {
                 "name": "volume_10h",
-                "script": os.path.join(BASE_DIR, "volume_10h.py")
+                "script": os.path.join(src_path, "volume_10h.py")
             },
             {
                 "name": "volume_10m",
-                "script": os.path.join(BASE_DIR, "volume_10m.py")
+                "script": os.path.join(src_path, "volume_10m.py")
             },
             {
                 "name": "ticker_analytics",
-                "script": os.path.join(BASE_DIR, "ticker_analytics.py")
+                "script": os.path.join(src_path, "ticker_analytics.py")
             },
             {
                 "name": "buy_price_writer",
-                "script": os.path.join(BASE_DIR, "buy_price_writer.py")
+                "script": os.path.join(src_path, "buy_price_writer.py")
             },
             {
                 "name": "alerts_copy",
-                "script": os.path.join(BASE_DIR, "alerts_copy.py")
+                "script": os.path.join(src_path, "alerts_copy.py")
             },
             {
                 "name": "calculator",
-                "script": os.path.join(BASE_DIR, "calculator.py")
+                "script": os.path.join(src_path, "calculator.py")
             },
             {
                 "name": "alert_metrics_monitor",
-                "script": os.path.join(BASE_DIR, "alert_metrics_monitor.py")
+                "script": os.path.join(src_path, "alert_metrics_monitor.py")
             }
         ]
         
@@ -83,7 +80,7 @@ class ScriptStarter:
                 # Запускаем процесс
                 process = subprocess.Popen(
                     [python_exe, config["script"]],
-                    cwd=BASE_DIR,
+                    cwd=src_path,
                     #stdout=subprocess.DEVNULL, #Если вывод данных в консоль не нужен
                     #stderr=subprocess.DEVNULL, #Если вывод ошибок в консоль не нужен
                     stdout=None, #Вывод данных в консоль

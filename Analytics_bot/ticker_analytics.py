@@ -9,22 +9,17 @@ import requests
 from datetime import datetime
 from datetime import timezone
 from logger import logger
+from config import *
 
-# Конфигурация
-SCRIPT_NAME = "T_ANAL      :  " #Имя скрипта для вывода в консоль
-TICKER_UP_FOLDER = "Data/Ticker_up"
-VOLUME_10M_FOLDER = "Data/Volume_10M"
-VOLUME_10H_FOLDER = "Data/Volume_10H"
-ALERTS_FOLDER = "Data/Alerts"  # Новая папка для хранения алертов
 
 # Пороговое значение (X раз) - можно изменить по необходимости
 X_MULTIPLIER = 5.0  # Например, должно быть больше в 2 раза
 
 def init_alerts_folder():
     """Инициализировать папку для хранения алертов"""
-    if not os.path.exists(ALERTS_FOLDER):
-        os.makedirs(ALERTS_FOLDER)
-        logger.info(SCRIPT_NAME + f"Создана папка для алертов: {ALERTS_FOLDER}")
+    if not os.path.exists(T_ANAL_ALERTS_FOLDER):
+        os.makedirs(T_ANAL_ALERTS_FOLDER)
+        logger.info(T_ANAL_SCRIPT_NAME + f"Создана папка для алертов: {T_ANAL_ALERTS_FOLDER}")
 
 def get_current_date_str():
     """Получить текущую дату в формате для имени файла (по UTC)"""
@@ -35,7 +30,7 @@ def get_alerts_file_path(date_str=None):
     if date_str is None:
         date_str = get_current_date_str()
     filename = f"alerts_{date_str}.csv"
-    return os.path.join(ALERTS_FOLDER, filename)
+    return os.path.join(T_ANAL_ALERTS_FOLDER, filename)
 
 def save_alert_to_file(ticker, reason, bot_token, chat_id, message_thread_id=None):
     """Сохранить алерт в файл с текущей датой по UTC"""
@@ -83,7 +78,7 @@ def save_alert_to_file(ticker, reason, bot_token, chat_id, message_thread_id=Non
             
             # Проверяем, есть ли уже такой тикер в файле
             if ticker in existing_df['ticker'].values:
-                logger.warning(SCRIPT_NAME + f"Тикер {ticker} уже присутствует в файле {os.path.basename(file_path)}")
+                logger.warning(T_ANAL_SCRIPT_NAME + f"Тикер {ticker} уже присутствует в файле {os.path.basename(file_path)}")
                 return False
             
             # Убедимся, что оба DataFrame имеют одинаковые колонки
@@ -107,7 +102,7 @@ def save_alert_to_file(ticker, reason, bot_token, chat_id, message_thread_id=Non
         
         # Сохраняем в CSV
         combined_df.to_csv(file_path, index=False)
-        logger.info(SCRIPT_NAME + f"Алерт для {ticker} сохранен в файл: {os.path.basename(file_path)}")
+        logger.info(T_ANAL_SCRIPT_NAME + f"Алерт для {ticker} сохранен в файл: {os.path.basename(file_path)}")
         
         # Отправляем в Telegram
         #return True, (f"Превышение объёмов: {min_ratio:.2f} x")
@@ -117,7 +112,7 @@ def save_alert_to_file(ticker, reason, bot_token, chat_id, message_thread_id=Non
         return True
         
     except Exception as e:
-        logger.error(SCRIPT_NAME + f"Ошибка при сохранении алерта в файл: {e}")
+        logger.error(T_ANAL_SCRIPT_NAME + f"Ошибка при сохранении алерта в файл: {e}")
         # В случае ошибки всё равно отправляем в Telegram
         message = f"🚨 #{ticker}: {reason}"
         #send_to_telegram(message, bot_token, chat_id, message_thread_id=message_thread_id, parse_mode="HTML")
@@ -188,7 +183,7 @@ def wait_for_file_stability(file_path, check_interval=1, stable_period=2):
         if current_size == last_size:
             stable_time += check_interval
             if stable_time >= stable_period:
-                logger.info(SCRIPT_NAME + f"Файл стабилизирован за {time.time() - start_time:.2f} сек")
+                logger.info(T_ANAL_SCRIPT_NAME + f"Файл стабилизирован за {time.time() - start_time:.2f} сек")
                 return True
         else:
             last_size = current_size
@@ -198,7 +193,7 @@ def wait_for_file_stability(file_path, check_interval=1, stable_period=2):
         
         # Таймаут на случай, если файл пишется очень долго
         if time.time() - start_time > 30:
-            logger.warning(SCRIPT_NAME + f"Таймаут ожидания файла {os.path.basename(file_path)}")
+            logger.warning(T_ANAL_SCRIPT_NAME + f"Таймаут ожидания файла {os.path.basename(file_path)}")
             return False
 
 def analyze_ticker(ticker, volume_10m_value, volume_10h_data):
@@ -247,25 +242,25 @@ def analyze_ticker(ticker, volume_10m_value, volume_10h_data):
 def process_ticker_up_file(file_path):
     """Обработать файл с тикерами"""
     #print(SCRIPT_NAME + f"{'='*60}")
-    logger.info(SCRIPT_NAME + f"Начало обработки файла: {os.path.basename(file_path)}")
+    logger.info(T_ANAL_SCRIPT_NAME + f"Начало обработки файла: {os.path.basename(file_path)}")
     #print(SCRIPT_NAME + f"{'='*60}")
     
     # Получаем самые свежие файлы для сравнения
-    latest_10m_file = get_latest_file(VOLUME_10M_FOLDER, "volume_10m_*.csv")
-    latest_10h_file = get_latest_file(VOLUME_10H_FOLDER, "Volume_10H_*.csv")
+    latest_10m_file = get_latest_file(T_ANAL_VOLUME_10M_FOLDER, "volume_10m_*.csv")
+    latest_10h_file = get_latest_file(T_ANAL_VOLUME_10H_FOLDER, "Volume_10H_*.csv")
     
     if not latest_10m_file:
-        logger.error(SCRIPT_NAME + "Ошибка: Не найден файл volume_10m")
+        logger.error(T_ANAL_SCRIPT_NAME + "Ошибка: Не найден файл volume_10m")
         return
     
     if not latest_10h_file:
-        logger.error(SCRIPT_NAME + "Ошибка: Не найден файл Volume_10H")
+        logger.error(T_ANAL_SCRIPT_NAME + "Ошибка: Не найден файл Volume_10H")
         return
     
     #print(SCRIPT_NAME + f"Используется 10M файл: {os.path.basename(latest_10m_file)}")
     #print(SCRIPT_NAME + f"Используется 10H файл: {os.path.basename(latest_10h_file)}")
     #print(SCRIPT_NAME + f"Пороговое значение X: {X_MULTIPLIER}")
-    logger.info(SCRIPT_NAME + "-" * 60)
+    logger.info(T_ANAL_SCRIPT_NAME + "-" * 60)
     
     try:
         # Загружаем данные
@@ -274,7 +269,7 @@ def process_ticker_up_file(file_path):
         volume_10h_df = pd.read_csv(latest_10h_file)
         
         # Проверяем структуру данных
-        logger.info(SCRIPT_NAME + f"Загружено тикеров из ticker_up: {len(tickers_df)}")
+        logger.info(T_ANAL_SCRIPT_NAME + f"Загружено тикеров из ticker_up: {len(tickers_df)}")
         #print(SCRIPT_NAME + f"Загружено записей volume_10m: {len(volume_10m_df)}")
         #print(SCRIPT_NAME + f"Загружено записей volume_10h: {len(volume_10h_df)}")
         #print(SCRIPT_NAME + "-" * 60)
@@ -303,7 +298,7 @@ def process_ticker_up_file(file_path):
                 alert, message = analyze_ticker(ticker, volume_10m_value, volume_10h_data)
                 
                 if alert:
-                    logger.info(SCRIPT_NAME + f"🚨#{ticker}: {message}")
+                    logger.info(T_ANAL_SCRIPT_NAME + f"🚨#{ticker}: {message}")
                     tickers_with_alerts += 1
                     
                     # Сохраняем алерт в файл и отправляем в Telegram
@@ -316,27 +311,27 @@ def process_ticker_up_file(file_path):
                 else:
                     # Для тикеров без алерта можно выводить меньше информации
                     if processed_tickers <= 10:  # Выводим только первые 10 для примера
-                        logger.info(SCRIPT_NAME + f"{ticker}: {message}")
+                        logger.info(T_ANAL_SCRIPT_NAME + f"{ticker}: {message}")
             else:
                 if processed_tickers <= 10:  # Выводим только первые 10 для примера
-                    logger.info(SCRIPT_NAME + f"{ticker}: Нет данных в volume_10h")
+                    logger.info(T_ANAL_SCRIPT_NAME + f"{ticker}: Нет данных в volume_10h")
         
-        logger.info(SCRIPT_NAME + "-" * 60)
-        logger.info(SCRIPT_NAME + f"Обработка завершена.")
-        logger.info(SCRIPT_NAME + f"Обработано тикеров: {processed_tickers}")
-        logger.info(SCRIPT_NAME + f"Найдено тикеров с алертами: {tickers_with_alerts}")
+        logger.info(T_ANAL_SCRIPT_NAME + "-" * 60)
+        logger.info(T_ANAL_SCRIPT_NAME + f"Обработка завершена.")
+        logger.info(T_ANAL_SCRIPT_NAME + f"Обработано тикеров: {processed_tickers}")
+        logger.info(T_ANAL_SCRIPT_NAME + f"Найдено тикеров с алертами: {tickers_with_alerts}")
         
         # Показываем информацию о файле алертов
         current_date = get_current_date_str()
         alerts_file = get_alerts_file_path(current_date)
         if os.path.exists(alerts_file):
             alerts_df = pd.read_csv(alerts_file)
-            logger.info(SCRIPT_NAME + f"Всего алертов за сегодня ({current_date}): {len(alerts_df)}")
+            logger.info(T_ANAL_SCRIPT_NAME + f"Всего алертов за сегодня ({current_date}): {len(alerts_df)}")
         
-        logger.info(SCRIPT_NAME + f"{'='*60}")
+        logger.info(T_ANAL_SCRIPT_NAME + f"{'='*60}")
         
     except Exception as e:
-        logger.error(SCRIPT_NAME + f"Ошибка при обработке файлов: {e}")
+        logger.error(T_ANAL_SCRIPT_NAME + f"Ошибка при обработке файлов: {e}")
         import traceback
         traceback.print_exc()
 
@@ -353,15 +348,15 @@ class TickerUpHandler(FileSystemEventHandler):
         current_date = get_current_date_str()
         
         if self.current_alerts_date != current_date:
-            logger.info(SCRIPT_NAME + f"Дата изменилась на {current_date}. Новые алерты будут записываться в новый файл.")
+            logger.info(T_ANAL_SCRIPT_NAME + f"Дата изменилась на {current_date}. Новые алерты будут записываться в новый файл.")
             self.current_alerts_date = current_date
             
             # Проверяем существование файла для новой даты
             new_file_path = get_alerts_file_path(current_date)
             if os.path.exists(new_file_path):
-                logger.info(SCRIPT_NAME + f"Файл алертов для {current_date} уже существует.")
+                logger.info(T_ANAL_SCRIPT_NAME + f"Файл алертов для {current_date} уже существует.")
             else:
-                logger.error(SCRIPT_NAME + f"Будет создан новый файл алертов для {current_date}.")
+                logger.error(T_ANAL_SCRIPT_NAME + f"Будет создан новый файл алертов для {current_date}.")
     
     def on_created(self, event):
         """Обработать создание нового файла"""
@@ -384,7 +379,7 @@ class TickerUpHandler(FileSystemEventHandler):
             return
         
         #print(SCRIPT_NAME + f"{'#'*60}")
-        logger.info(SCRIPT_NAME + f"Обнаружен новый файл: {filename}")
+        logger.info(T_ANAL_SCRIPT_NAME + f"Обнаружен новый файл: {filename}")
         #print(SCRIPT_NAME + f"Полный путь: {file_path}")
         #print(SCRIPT_NAME + f"{'#'*60}")
         
@@ -396,44 +391,44 @@ class TickerUpHandler(FileSystemEventHandler):
             # Добавляем файл в список обработанных
             self.processed_files.add(filename)
         else:
-            logger.error(SCRIPT_NAME + f"Не удалось дождаться стабилизации файла {filename}")
+            logger.error(T_ANAL_SCRIPT_NAME + f"Не удалось дождаться стабилизации файла {filename}")
 
 def main():
     """Основная функция"""
-    logger.info(SCRIPT_NAME + f"{'='*60}")
-    logger.info(SCRIPT_NAME + "Запуск системы мониторинга тикеров")
-    logger.info(SCRIPT_NAME + f"{'='*60}")
-    logger.info(SCRIPT_NAME + f"Папка Ticker_up: {TICKER_UP_FOLDER}")
-    logger.info(SCRIPT_NAME + f"Папка Volume_10M: {VOLUME_10M_FOLDER}")
-    logger.info(SCRIPT_NAME + f"Папка Volume_10H: {VOLUME_10H_FOLDER}")
-    logger.info(SCRIPT_NAME + f"Папка Alerts: {ALERTS_FOLDER}")
-    logger.info(SCRIPT_NAME + f"Пороговое значение (X): {X_MULTIPLIER}")
-    logger.info(SCRIPT_NAME + f"{'='*60}")
+    logger.info(T_ANAL_SCRIPT_NAME + f"{'='*60}")
+    logger.info(T_ANAL_SCRIPT_NAME + "Запуск системы мониторинга тикеров")
+    logger.info(T_ANAL_SCRIPT_NAME + f"{'='*60}")
+    logger.info(T_ANAL_SCRIPT_NAME + f"Папка Ticker_up: {T_ANAL_TICKER_UP_FOLDER}")
+    logger.info(T_ANAL_SCRIPT_NAME + f"Папка Volume_10M: {T_ANAL_VOLUME_10M_FOLDER}")
+    logger.info(T_ANAL_SCRIPT_NAME + f"Папка Volume_10H: {T_ANAL_VOLUME_10H_FOLDER}")
+    logger.info(T_ANAL_SCRIPT_NAME + f"Папка Alerts: {T_ANAL_ALERTS_FOLDER}")
+    logger.info(T_ANAL_SCRIPT_NAME + f"Пороговое значение (X): {X_MULTIPLIER}")
+    logger.info(T_ANAL_SCRIPT_NAME + f"{'='*60}")
     
     # Инициализируем папку для алертов
     init_alerts_folder()
     
     # Проверяем существование папок
-    for folder in [TICKER_UP_FOLDER, VOLUME_10M_FOLDER, VOLUME_10H_FOLDER, ALERTS_FOLDER]:
+    for folder in [T_ANAL_TICKER_UP_FOLDER, T_ANAL_VOLUME_10M_FOLDER, T_ANAL_VOLUME_10H_FOLDER, T_ANAL_ALERTS_FOLDER]:
         if not os.path.exists(folder):
-            logger.error(SCRIPT_NAME + f"Ошибка: Папка не существует: {folder}")
+            logger.error(T_ANAL_SCRIPT_NAME + f"Ошибка: Папка не существует: {folder}")
             return
     
     # Показываем существующие файлы алертов
-    alert_files = glob.glob(os.path.join(ALERTS_FOLDER, "alerts_*.csv"))
+    alert_files = glob.glob(os.path.join(T_ANAL_ALERTS_FOLDER, "alerts_*.csv"))
     if alert_files:
-        logger.info(SCRIPT_NAME + "Существующие файлы алертов:")
+        logger.info(T_ANAL_SCRIPT_NAME + "Существующие файлы алертов:")
         for file in sorted(alert_files):
             file_date = os.path.basename(file).replace("alerts_", "").replace(".csv", "")
             df = pd.read_csv(file)
-            logger.info(SCRIPT_NAME + f"{os.path.basename(file)} - {len(df)} алертов")
+            logger.info(T_ANAL_SCRIPT_NAME + f"{os.path.basename(file)} - {len(df)} алертов")
     
     # Проверяем, есть ли уже файлы в папке Ticker_up
-    existing_files = glob.glob(os.path.join(TICKER_UP_FOLDER, "tickers_up_*.csv"))
+    existing_files = glob.glob(os.path.join(T_ANAL_TICKER_UP_FOLDER, "tickers_up_*.csv"))
     if existing_files:
         latest_file = max(existing_files, key=os.path.getctime)
-        logger.info(SCRIPT_NAME + f"Найден существующий файл: {os.path.basename(latest_file)}")
-        logger.info(SCRIPT_NAME + "Обрабатываю...")
+        logger.info(T_ANAL_SCRIPT_NAME + f"Найден существующий файл: {os.path.basename(latest_file)}")
+        logger.info(T_ANAL_SCRIPT_NAME + "Обрабатываю...")
         
         handler = TickerUpHandler()
         handler.handle_new_file(latest_file)
@@ -441,10 +436,10 @@ def main():
     # Запускаем мониторинг
     event_handler = TickerUpHandler()
     observer = Observer()
-    observer.schedule(event_handler, TICKER_UP_FOLDER, recursive=False)
+    observer.schedule(event_handler, T_ANAL_TICKER_UP_FOLDER, recursive=False)
     
-    logger.info(SCRIPT_NAME + "Мониторинг запущен. Ожидание новых файлов...")
-    logger.info(SCRIPT_NAME + "Для остановки нажмите Ctrl+C")
+    logger.info(T_ANAL_SCRIPT_NAME + "Мониторинг запущен. Ожидание новых файлов...")
+    logger.info(T_ANAL_SCRIPT_NAME + "Для остановки нажмите Ctrl+C")
     
     try:
         observer.start()
@@ -452,7 +447,7 @@ def main():
             time.sleep(1)
     except KeyboardInterrupt:
         observer.stop()
-        logger.info(SCRIPT_NAME + "Мониторинг остановлен.")
+        logger.info(T_ANAL_SCRIPT_NAME + "Мониторинг остановлен.")
     finally:
         observer.join()
 

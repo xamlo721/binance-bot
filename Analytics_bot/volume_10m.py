@@ -7,25 +7,8 @@ import glob
 from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-import logging
 from logger import logger
-
-# Настройка логирования
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-# Определяем базовую директорию проекта
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# Или, если скрипт находится глубже в структуре:
-# BASE_DIR = Path(__file__).parent.parent.parent  # если нужно подняться на 3 уровня вверх
-
-# Настройки
-SCRIPT_NAME = "VOL_10M     :  "
-# Настройки директорий
-K_LINES_DIR = os.path.join(BASE_DIR, "Data", "K_lines", "1M")                 # Папка с минутными свечами
-RESULTS_DIR = os.path.join(BASE_DIR, "Data", "Volume_10M")                 # Папка с результатом
-MAX_RESULT_FILES = 2                                            # Максимум файлов результата
-
+from config import *
 
 class FileHandler(FileSystemEventHandler):
     def __init__(self, source_dir, target_dir):
@@ -39,7 +22,7 @@ class FileHandler(FileSystemEventHandler):
     def on_created(self, event):
         if not event.is_directory and event.src_path.endswith('.csv'):
             #logger.info(f"Обнаружен новый файл: {event.src_path}")
-            logger.info(SCRIPT_NAME + f"Обнаружен новый файл: {event.src_path}")
+            logger.info(vol_10m_SCRIPT_NAME + f"Обнаружен новый файл: {event.src_path}")
             self.process_file(event.src_path)
     
     def wait_for_file_stabilization(self, filepath, check_interval=0.5, max_checks=10):
@@ -65,7 +48,7 @@ class FileHandler(FileSystemEventHandler):
                 continue
         
         #logger.warning(f"Файл {filepath} не стабилизировался за {max_checks * check_interval} секунд")
-        logger.warning(SCRIPT_NAME + f"Файл {filepath} не стабилизировался за {max_checks * check_interval} секунд")
+        logger.warning(vol_10m_SCRIPT_NAME + f"Файл {filepath} не стабилизировался за {max_checks * check_interval} секунд")
         return False
     
     def get_latest_files(self, count=10):
@@ -88,7 +71,7 @@ class FileHandler(FileSystemEventHandler):
                 all_data.append(df[['symbol', 'quote_volume']])
             except Exception as e:
                 #logger.error(f"Ошибка чтения файла {file}: {e}")
-                logger.error(SCRIPT_NAME + f"Ошибка чтения файла {file}: {e}")
+                logger.error(vol_10m_SCRIPT_NAME + f"Ошибка чтения файла {file}: {e}")
                 continue
         
         if not all_data:
@@ -119,7 +102,7 @@ class FileHandler(FileSystemEventHandler):
         
         if len(latest_files) < 10:
             #logger.warning(f"Найдено только {len(latest_files)} файлов, нужно 10. Пропускаем.")
-            logger.warning(SCRIPT_NAME + f"Найдено только {len(latest_files)} файлов, нужно 10. Пропускаем.")
+            logger.warning(vol_10m_SCRIPT_NAME + f"Найдено только {len(latest_files)} файлов, нужно 10. Пропускаем.")
             return
         
         # Рассчитываем объемы
@@ -127,7 +110,7 @@ class FileHandler(FileSystemEventHandler):
         
         if volume_df.empty:
             #logger.warning("Нет данных для агрегации")
-            logger.info(SCRIPT_NAME + "Нет данных для агрегации")
+            logger.info(vol_10m_SCRIPT_NAME + "Нет данных для агрегации")
             return
         
         # Создаем выходной файл
@@ -137,9 +120,9 @@ class FileHandler(FileSystemEventHandler):
         # Сохраняем результат
         volume_df.to_csv(output_path, index=False)
         #logger.info(f"Создан файл: {output_path}")
-        logger.info(SCRIPT_NAME + f"Создан файл: {output_path}")
+        logger.info(vol_10m_SCRIPT_NAME + f"Создан файл: {output_path}")
         #logger.info(f"Обработано {len(volume_df)} тикеров")
-        logger.info(SCRIPT_NAME + f"Обработано {len(volume_df)} тикеров")
+        logger.info(vol_10m_SCRIPT_NAME + f"Обработано {len(volume_df)} тикеров")
         
         # Очищаем старые файлы
         cleanup_result_files()
@@ -153,36 +136,36 @@ class FileHandler(FileSystemEventHandler):
 
 def cleanup_result_files():
     """Удаляет старые файлы результатов если их больше MAX_RESULT_FILES"""
-    files = glob.glob(os.path.join(RESULTS_DIR, "volume_10m_*.csv"))
+    files = glob.glob(os.path.join(hdr_1h_RESULTS_DIR, "volume_10m_*.csv"))
     files.sort()
     
-    while len(files) >= MAX_RESULT_FILES + 1:
+    while len(files) >= vol_10m_MAX_RESULT_FILES + 1:
         oldest_file = files.pop(0)
         try:
             os.remove(oldest_file)
-            logger.info(SCRIPT_NAME + f"Удален старый файл: {os.path.basename(oldest_file)}")
+            logger.info(vol_10m_SCRIPT_NAME + f"Удален старый файл: {os.path.basename(oldest_file)}")
         except OSError as e:
-            logger.error(SCRIPT_NAME + f"Ошибка удаления файла {oldest_file}: {e}")
+            logger.error(vol_10m_SCRIPT_NAME + f"Ошибка удаления файла {oldest_file}: {e}")
 
 
 def main():
     # Проверяем существование исходной директории
-    if not os.path.exists(K_LINES_DIR):
+    if not os.path.exists(hdr_1h_K_LINES_DIR):
         #logger.error(f"Исходная директория не существует: {K_LINES_DIR}")
-        logger.info(SCRIPT_NAME + f"Исходная директория не существует: {K_LINES_DIR}")
+        logger.info(vol_10m_SCRIPT_NAME + f"Исходная директория не существует: {hdr_1h_K_LINES_DIR}")
         return
     
     #logger.info(f"Мониторинг директории: {K_LINES_DIR}")
-    logger.info(SCRIPT_NAME + f"Мониторинг директории: {K_LINES_DIR}")
+    logger.info(vol_10m_SCRIPT_NAME + f"Мониторинг директории: {hdr_1h_K_LINES_DIR}")
     #logger.info(f"Целевая директория: {RESULTS_DIR}")
-    logger.info(SCRIPT_NAME + f"Целевая директория: {RESULTS_DIR}")
+    logger.info(vol_10m_SCRIPT_NAME + f"Целевая директория: {hdr_1h_RESULTS_DIR}")
     
     # Создаем обработчик событий
-    event_handler = FileHandler(K_LINES_DIR, RESULTS_DIR)
+    event_handler = FileHandler(hdr_1h_K_LINES_DIR, hdr_1h_RESULTS_DIR)
     
     # Создаем и запускаем наблюдатель
     observer = Observer()
-    observer.schedule(event_handler, K_LINES_DIR, recursive=False)
+    observer.schedule(event_handler, hdr_1h_K_LINES_DIR, recursive=False)
     observer.start()
     
     try:
@@ -191,7 +174,7 @@ def main():
     except KeyboardInterrupt:
         observer.stop()
         #logger.info("Мониторинг остановлен")
-        logger.info(SCRIPT_NAME + "Мониторинг остановлен")
+        logger.info(vol_10m_SCRIPT_NAME + "Мониторинг остановлен")
     
     observer.join()
 

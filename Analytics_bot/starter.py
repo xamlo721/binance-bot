@@ -8,14 +8,6 @@ import sys
 from logger import logger
 from config import *
 
-src_path = os.path.dirname(os.path.abspath(__file__))
-
-# Папка с KLD
-KLD_DIR = os.path.join(src_path, "k_line_downloader.py")    
-
-# Папка с HDP_1H
-HDP_1H_DIR = os.path.join(src_path, "hdp_1h.py")                
-
 class ScriptStarter:
     def __init__(self):
         self.background_processes = []

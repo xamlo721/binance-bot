@@ -37,6 +37,14 @@ BPW_klines_folder = "Data/K_lines/1M"
 calc_k_lines_path = "Data/K_lines/1M"
 calc_alerts_calc_path = "Data/Alerts_calc"
 
+# k line
+
+k_line_SCRIPT_NAME = "KLD_1M      :  "                       # Имя скрипта для вывода в консоль
+k_K_LINES_DIR = "Data/K_lines/1M"     # Папка с минутными свечами
+k_line_CLEAN_OLD_FILES = 180                               # Max файлов в папке
+
+
+
 # hdp_1h
 hdr_1h_K_LINES_DIR = "Data/K_lines/1M"         # Папка с минутными свечами
 hdr_1h_RESULTS_DIR = "Data/K_lines/1H"         # Папка с результатом

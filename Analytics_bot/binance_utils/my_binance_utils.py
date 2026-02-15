@@ -4,8 +4,102 @@ import aiohttp
 import asyncio
 
 from logger import logger
+from datetime import datetime
 
 from ramstorage.ram_storage_utils import CandleRecord
+
+from collections import deque
+from typing import List
+from typing import Optional
+from typing import Callable
+from typing import Any
+
+BINANCE_API_LIMIT: int = 800 #1200
+THREAD_POOL_SIZE: int = 12 # 30
+
+# ============== Rate Limiter для Binance API ==============
+
+class BinanceRateLimiter:
+    """Ограничитель запросов для Binance API"""
+    
+    def __init__(self, requests_per_minute: int = BINANCE_API_LIMIT):
+        """
+        Args:
+            requests_per_minute: Максимальное количество запросов в минуту (Binance: 1200)
+        """
+        self.requests_per_minute = requests_per_minute
+        self.request_timestamps = deque()
+        self._lock = asyncio.Lock()
+        
+    async def wait_if_needed(self):
+        """Ожидает, если превышен лимит запросов"""
+        async with self._lock:
+            now = time.time()
+            
+            # Удаляем запросы старше 1 минуты
+            while self.request_timestamps and self.request_timestamps[0] < now - 60:
+                self.request_timestamps.popleft()
+            
+            # Если достигнут лимит, ждем
+            if len(self.request_timestamps) >= self.requests_per_minute:
+                oldest = self.request_timestamps[0]
+                wait_time = 60 - (now - oldest)
+                if wait_time > 0:
+                    logger.warning(f"Достигнут лимит запросов Binance. Ожидание {wait_time:.2f} секунд...")
+                    await asyncio.sleep(wait_time)
+                    
+                    # После ожидания очищаем старые записи
+                    now = time.time()
+                    while self.request_timestamps and self.request_timestamps[0] < now - 60:
+                        self.request_timestamps.popleft()
+            
+            # Добавляем текущий запрос
+            self.request_timestamps.append(now)
+
+class RateLimitedSession:
+    """Обертка для aiohttp.ClientSession с ограничением запросов"""
+    
+    def __init__(self, session: aiohttp.ClientSession, limiter: BinanceRateLimiter):
+        self.session = session
+        self.limiter = limiter
+        
+    async def get(self, url: str, **kwargs):
+        await self.limiter.wait_if_needed()
+        return await self.session.get(url, **kwargs)
+    
+    async def close(self):
+        await self.session.close()
+
+# Глобальный экземпляр ограничителя
+_binance_limiter = BinanceRateLimiter(requests_per_minute=BINANCE_API_LIMIT)
+
+# ============== Декоратор для синхронных функций ==============
+
+def rate_limited_sync(func: Callable) -> Callable:
+    """Декоратор для синхронных функций с ограничением запросов"""
+    def wrapper(*args, **kwargs):
+        global _binance_limiter
+        
+        # Синхронное ожидание
+        loop = None
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        if loop.is_running():
+            # Если цикл уже запущен, создаем задачу
+            future = asyncio.run_coroutine_threadsafe(_binance_limiter.wait_if_needed(), loop)
+            future.result()
+        else:
+            # Иначе запускаем корутину
+            loop.run_until_complete(_binance_limiter.wait_if_needed())
+        
+        return func(*args, **kwargs)
+    return wrapper
+
+# ============== Модифицированные функции с ограничением ==============
 
 def get_trading_symbols():
     """Получение списка торгующихся тикеров"""
@@ -29,62 +123,71 @@ def get_trading_symbols():
         return []
     
 
-async def fetch_ticker_1m_volumes(session, symbol, semaphore, candleDepth: int = 1) -> CandleRecord | None:
-    """Асинхронное получение данных для одного тикера"""
-    async with semaphore:
-        # Вычисляем время окончания последней закрытой свечи
-        current_time = int(time.time() * 1000)
-        end_time = current_time - (current_time % 60000) - 1000  # -1 секунда для гарантии
-        
-        url = "https://fapi.binance.com/fapi/v1/klines"
-        params = {
-            'symbol': symbol,
-            'interval': '1m',
-            'limit': candleDepth,
-            'endTime': end_time
-        }
-        
-        try:
-            async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    if data and len(data) > 0:
-                        kline = data[0]
-                        # Проверяем, что свеча закрыта (время закрытия меньше текущего времени)
-                        close_time = kline[6]
-                        if close_time < current_time:
-                            return CandleRecord (
-                                symbol=symbol,
-                                open=float(kline[1]),                           # Open price - цена открытия
-                                high =  float(kline[2]),                        # High price - максимальная цена за период
-                                low =  float(kline[3]),                         # Low price - минимальная цена за период
-                                close =  float(kline[4]),                       # Close price - цена закрытия
-                                volume =  float(kline[5]),                      # Volume - объем базового актива
-                                quote_volume = float(kline[7]),                 # Quote asset volume - объем в котировочной валюте
-                                taker_buy_base_volume = float(kline[9]),        # Taker buy base asset volume
-                                taker_buy_quote_volume = float(kline[10]),      # Taker buy quote asset volume
-                                trades =  kline[8],                             # Number of trades - количество сделок
-                                open_time =  kline[0]                           # Open time - время открытия свечи
-                            )
-                else:
-                    logger.error(f"Ошибка HTTP {response.status} для {symbol}")
-                    
-        except asyncio.TimeoutError:
-            logger.error(f"Таймаут для {symbol}")
+async def fetch_ticker_1m_volumes(session, symbol, limiter, candleDepth: int = 1) -> CandleRecord | None:
+    """Асинхронное получение данных для одного тикера с ограничением"""
+    await limiter.wait_if_needed()
+    
+    current_time = int(time.time() * 1000)
+    end_time = current_time - (current_time % 60000) - 1000
+    
+    url = "https://fapi.binance.com/fapi/v1/klines"
+    params = {
+        'symbol': symbol,
+        'interval': '1m',
+        'limit': candleDepth,
+        'endTime': end_time
+    }
+    
+    try:
+        async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as response:
+            if response.status == 200:
+                data = await response.json()
+                if data and len(data) > 0:
+                    kline = data[0]
+                    close_time = kline[6]
+                    if close_time < current_time:
+                        return CandleRecord(
+                            symbol=symbol,
+                            open=float(kline[1]),
+                            high=float(kline[2]),
+                            low=float(kline[3]),
+                            close=float(kline[4]),
+                            volume=float(kline[5]),
+                            quote_volume=float(kline[7]),
+                            taker_buy_base_volume=float(kline[9]),
+                            taker_buy_quote_volume=float(kline[10]),
+                            trades=kline[8],
+                            open_time=kline[0]
+                        )
+            elif response.status == 429:
+                logger.error(f"Лимит запросов превышен для {symbol}. Статус 429")
+                # Дополнительное ожидание при 429 ошибке
+                await asyncio.sleep(5)
+            else:
+                logger.error(f"Ошибка HTTP {response.status} для {symbol}")
+                await asyncio.sleep(5)
+                
+    except asyncio.TimeoutError:
+        logger.error(f"Таймаут для {symbol}")
 
-        except Exception as e:
-            logger.error(f"Ошибка для {symbol}: {str(e)}")
-        
-        return None
+    except Exception as e:
+        logger.error(f"Ошибка для {symbol}: {str(e)}")
+    
+    return None
 
-async def fetch_all_tickers_volumes(symbols, max_concurrent=100):
-    """Асинхронное получение объемов для всех тикеров"""
+async def fetch_all_tickers_volumes(symbols, countDepth: int, max_concurrent=THREAD_POOL_SIZE):
+    """Асинхронное получение объемов для всех тикеров с ограничением"""
+    # Уменьшаем max_concurrent для соблюдения лимитов
+    max_concurrent = min(max_concurrent, 50)
     semaphore = asyncio.Semaphore(max_concurrent)
+    limiter = BinanceRateLimiter(requests_per_minute=800)
     
     async with aiohttp.ClientSession() as session:
         tasks = []
         for symbol in symbols:
-            task = asyncio.create_task(fetch_ticker_1m_volumes(session, symbol, semaphore))
+            task = asyncio.create_task(
+                _fetch_with_limits(session, symbol, semaphore, limiter, countDepth, fetch_ticker_1m_volumes)
+            )
             tasks.append(task)
         
         results = []
@@ -94,7 +197,193 @@ async def fetch_all_tickers_volumes(symbols, max_concurrent=100):
             if result:
                 results.append(result)
             completed += 1
-            if completed % 1000 == 0:
+            if completed % 500 == 0:
                 logger.info(f"Обработано {completed}/{len(symbols)} тикеров")
         
         return results
+
+
+# Функция для конвертации результата в формат list[list[CandleRecord]]
+def convert_to_periods_list(results: dict, limit: int) -> list[list[CandleRecord]]:
+    """
+    Конвертирует результаты из словаря в список списков по минутам
+    
+    Args:
+        results: Словарь {symbol: [CandleRecord]} или {symbol: CandleRecord}
+        limit: Количество минут
+    
+    Returns:
+        list[list[CandleRecord]]: Список из limit списков, где каждый список - свечи за одну минуту
+    """
+    if not results:
+        return []
+    
+    # Определяем, что у нас: словарь со списками или с отдельными свечами
+    first_value = next(iter(results.values()))
+    
+    if isinstance(first_value, list):
+        # Уже списки свечей
+        # Создаем список минут
+        periods = [[] for _ in range(limit)]
+        
+        for symbol, candles in results.items():
+            for i, candle in enumerate(candles):
+                if i < limit:
+                    periods[i].append(candle)
+        
+        return periods
+    else:
+        # Отдельные свечи
+        periods = [[] for _ in range(limit)]
+        periods[0] = list(results.values())
+        return periods
+
+async def _fetch_with_limits(session, symbol, count, semaphore, limiter, fetch_func, *args, **kwargs):
+    """Вспомогательная функция для выполнения запросов с ограничениями"""
+    async with semaphore:
+        return await fetch_func(session, symbol, count,  limiter, *args, **kwargs)
+
+async def fetch_all_tickers_volumes_for_time(symbols, count: int, end_timestamp, max_concurrent: int = THREAD_POOL_SIZE) -> List[List[CandleRecord]]:
+    """Асинхронное получение данных для всех тикеров для конкретного времени с ограничением"""
+    # Для исторических данных уменьшаем параллельность
+    max_concurrent = min(max_concurrent, THREAD_POOL_SIZE)
+    semaphore = asyncio.Semaphore(max_concurrent)
+    limiter = BinanceRateLimiter(requests_per_minute=BINANCE_API_LIMIT)
+    
+    async with aiohttp.ClientSession() as session:
+        tasks = []
+        for symbol in symbols:
+            task = asyncio.create_task(
+                _fetch_with_limits(
+                    session, 
+                    symbol, 
+                    count, 
+                    semaphore, 
+                    limiter, 
+                    fetch_ticker_1m_volumes_for_time, end_timestamp)
+            )
+            tasks.append(task)
+        
+        tickers_data: List[List[CandleRecord]] = []
+        completed = 0
+        for task in asyncio.as_completed(tasks):
+            result: List[CandleRecord] = await task
+            if result:
+                tickers_data.append(result)
+            completed += 1
+            if completed % 300 == 0:
+                logger.info(f"Обработано {completed}/{len(symbols)} тикеров")
+            
+            # Небольшая задержка между задачами
+            if completed % 100 == 0:
+                await asyncio.sleep(0.5)
+                # Транспонируем в список минут
+                
+        minutes_data: List[List[CandleRecord]] = [[] for _ in range(count)]
+        
+        for ticker_candles in tickers_data:
+            for minute_index, candle in enumerate(ticker_candles):
+                if minute_index < count:
+                    minutes_data[minute_index].append(candle)
+        
+        logger.info(f"Сформировано {len(minutes_data)} минут по {len(minutes_data[0]) if minutes_data else 0} тикеров")
+        return minutes_data
+
+async def fetch_ticker_1m_volumes_for_time(session, symbol, count: int, limiter, end_timestamp: int) -> list[CandleRecord] | None:
+    """Асинхронное получение данных для одного тикера для конкретного времени"""
+    await limiter.wait_if_needed()  # Ждем разрешения от rate limiter
+
+    url = "https://fapi.binance.com/fapi/v1/klines"
+    params = {
+        'symbol': symbol,
+        'interval': '1m',
+        'limit': count,
+        'endTime': end_timestamp
+    }
+
+        # Логирование запроса
+    # Формируем полный URL для логирования
+    from urllib.parse import urlencode
+    full_url = f"{url}?{urlencode(params)}"
+    logger.debug(f"Запрос к Binance API: {full_url}")    
+
+    try:
+        async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as response:
+            if response.status == 200:
+                data = await response.json()
+
+                response_size = len(str(data))
+                logger.debug(f"🟢 ДАННЫЕ: Получено {len(data)} свечей, размер ответа ~{response_size} байт")
+
+                if data and len(data) > 0:
+
+                        # Логируем первую и последнюю свечу для отладки
+                    first_kline = data[0]
+                    last_kline = data[-1]
+
+                    first_time = datetime.fromtimestamp(first_kline[0] / 1000).strftime('%Y-%m-%d %H:%M:%S')
+                    last_time = datetime.fromtimestamp(last_kline[0] / 1000).strftime('%Y-%m-%d %H:%M:%S')
+
+                    logger.debug(f"📊 ДИАПАЗОН: {symbol} с {first_time} по {last_time} ({len(data)} свечей)")
+                    
+                    candles = []
+                    for kline in data:
+                        candle = CandleRecord(
+                            symbol=symbol,
+                            open=float(kline[1]),
+                            high=float(kline[2]),
+                            low=float(kline[3]),
+                            close=float(kline[4]),
+                            volume=float(kline[5]),
+                            quote_volume=float(kline[7]),
+                            taker_buy_base_volume=float(kline[9]),
+                            taker_buy_quote_volume=float(kline[10]),
+                            trades=kline[8],
+                            open_time=kline[0]
+                        )
+                        candles.append(candle)
+                    logger.debug(f"Загружено {len(candles)} свечей для {symbol}")
+                    return candles
+
+            else:
+                logger.error(f"❌ Ошибка HTTP {response.status} для {symbol}")
+                await asyncio.sleep(1)
+                
+    except Exception as e:
+        logger.error(f"❌ Ошибка для {symbol}: {str(e)}")
+    
+    return None
+    
+
+# ============== Утилита для пакетной обработки ==============
+
+async def batch_process_symbols(symbols: List[str], 
+                                process_func: Callable, 
+                                batch_size: int = 100,
+                                delay_between_batches: float = 2.0) -> List[Any]:
+    """
+    Обрабатывает символы пакетами для соблюдения лимитов API
+    
+    Args:
+        symbols: Список символов
+        process_func: Асинхронная функция для обработки пакета
+        batch_size: Размер пакета
+        delay_between_batches: Задержка между пакетами в секундах
+    
+    Returns:
+        List[Any]: Результаты обработки
+    """
+    results = []
+    
+    for i in range(0, len(symbols), batch_size):
+        batch = symbols[i:i + batch_size]
+        logger.info(f"Обработка пакета {i//batch_size + 1}/{(len(symbols)-1)//batch_size + 1}")
+        
+        batch_results = await process_func(batch)
+        results.extend(batch_results)
+        
+        # Задержка между пакетами
+        if i + batch_size < len(symbols):
+            await asyncio.sleep(delay_between_batches)
+    
+    return results

@@ -203,7 +203,7 @@ def cleanup_result_files():
 
 def main():
     # Проверяем существование директорий
-    for directory in [lb_12H_FOLDER, lb_K_LINES_DIR]:
+    for directory in [lb_12H_FOLDER, MINUTES_KLINE_FOLDER]:
         if not os.path.exists(directory):
             logger.error(lb_SCRIPT_NAME + f"Ошибка: директория {directory} не существует")
             return
@@ -217,7 +217,7 @@ def main():
     # Создаем и запускаем наблюдатель
     event_handler = KLineFileHandler()
     observer = Observer()
-    observer.schedule(event_handler, lb_K_LINES_DIR, recursive=False)
+    observer.schedule(event_handler, MINUTES_KLINE_FOLDER, recursive=False)
     observer.start()
     
     try:

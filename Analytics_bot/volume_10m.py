@@ -136,7 +136,7 @@ class FileHandler(FileSystemEventHandler):
 
 def cleanup_result_files():
     """Удаляет старые файлы результатов если их больше MAX_RESULT_FILES"""
-    files = glob.glob(os.path.join(hdr_1h_RESULTS_DIR, "volume_10m_*.csv"))
+    files = glob.glob(os.path.join(HOURS_KLINE_FOLDER, "volume_10m_*.csv"))
     files.sort()
     
     while len(files) >= vol_10m_MAX_RESULT_FILES + 1:
@@ -150,22 +150,22 @@ def cleanup_result_files():
 
 def main():
     # Проверяем существование исходной директории
-    if not os.path.exists(hdr_1h_K_LINES_DIR):
+    if not os.path.exists(MINUTES_KLINE_FOLDER):
         #logger.error(f"Исходная директория не существует: {K_LINES_DIR}")
-        logger.info(vol_10m_SCRIPT_NAME + f"Исходная директория не существует: {hdr_1h_K_LINES_DIR}")
+        logger.info(vol_10m_SCRIPT_NAME + f"Исходная директория не существует: {MINUTES_KLINE_FOLDER}")
         return
     
     #logger.info(f"Мониторинг директории: {K_LINES_DIR}")
-    logger.info(vol_10m_SCRIPT_NAME + f"Мониторинг директории: {hdr_1h_K_LINES_DIR}")
+    logger.info(vol_10m_SCRIPT_NAME + f"Мониторинг директории: {MINUTES_KLINE_FOLDER}")
     #logger.info(f"Целевая директория: {RESULTS_DIR}")
-    logger.info(vol_10m_SCRIPT_NAME + f"Целевая директория: {hdr_1h_RESULTS_DIR}")
+    logger.info(vol_10m_SCRIPT_NAME + f"Целевая директория: {HOURS_KLINE_FOLDER}")
     
     # Создаем обработчик событий
-    event_handler = FileHandler(hdr_1h_K_LINES_DIR, hdr_1h_RESULTS_DIR)
+    event_handler = FileHandler(MINUTES_KLINE_FOLDER, HOURS_KLINE_FOLDER)
     
     # Создаем и запускаем наблюдатель
     observer = Observer()
-    observer.schedule(event_handler, hdr_1h_K_LINES_DIR, recursive=False)
+    observer.schedule(event_handler, MINUTES_KLINE_FOLDER, recursive=False)
     observer.start()
     
     try:

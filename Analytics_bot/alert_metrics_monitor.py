@@ -12,7 +12,7 @@ from config import *
 
 class AlertMetricsProcessor:
     def __init__(self):
-        self.source_dir = AMM_source_dir
+        self.source_dir = ALERTS_CALC_FOLDER
         self.metrics_dir = AMM_metrics_dir
         
         # Создаем директорию для метрик, если не существует

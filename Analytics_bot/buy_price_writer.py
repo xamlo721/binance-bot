@@ -10,8 +10,8 @@ from config import *
 
 class AlertProcessor:
     def __init__(self):
-        self.alerts_folder = BPW_alerts_folder
-        self.klines_folder = BPW_klines_folder
+        self.alerts_folder = ALERTS_FOLDER
+        self.klines_folder = MINUTES_KLINE_FOLDER
         self.processed_files = {}  # Для отслеживания обработанных файлов
         self.last_alert_file = None  # Последний обработанный файл
         

@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 # Создаем директории, если их нет
-os.makedirs(VAL_10H_input_dir, exist_ok=True)
+os.makedirs(HOURS_KLINE_FOLDER, exist_ok=True)
 os.makedirs(VAL_10H_hdr_1h_RESULTS_DIR, exist_ok=True)
 
 
@@ -153,20 +153,20 @@ def cleanup_result_files():
 
 def main():
       # Проверка существования входной папки
-    if not os.path.exists(VAL_10H_input_dir):
+    if not os.path.exists(HOURS_KLINE_FOLDER):
         #logger.error(f"Входная папка не существует: {input_dir}")
-        logger.error(VAL_10H_SCRIPT_NAME + f"Входная папка не существует: {VAL_10H_input_dir}")
+        logger.error(VAL_10H_SCRIPT_NAME + f"Входная папка не существует: {HOURS_KLINE_FOLDER}")
         return
     
     # Создаем обработчик событий
-    event_handler = CSVFileHandler(VAL_10H_input_dir, VAL_10H_hdr_1h_RESULTS_DIR, num_files=10)
+    event_handler = CSVFileHandler(HOURS_KLINE_FOLDER, VAL_10H_hdr_1h_RESULTS_DIR, num_files=10)
     
     # Создаем наблюдатель
     observer = Observer()
-    observer.schedule(event_handler, VAL_10H_input_dir, recursive=False)
+    observer.schedule(event_handler, HOURS_KLINE_FOLDER, recursive=False)
     
     #logger.info(f"Начало мониторинга папки: {input_dir}")
-    logger.info(VAL_10H_SCRIPT_NAME + f"Начало мониторинга папки: {VAL_10H_input_dir}")
+    logger.info(VAL_10H_SCRIPT_NAME + f"Начало мониторинга папки: {HOURS_KLINE_FOLDER}")
     observer.start()
     
     try:

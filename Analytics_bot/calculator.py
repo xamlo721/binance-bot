@@ -299,8 +299,8 @@ class KLineFileHandler(FileSystemEventHandler):
 
 def main():
     # Пути к папкам
-    k_lines_path = calc_k_lines_path
-    alerts_calc_path = calc_alerts_calc_path
+    k_lines_path = MINUTES_KLINE_FOLDER
+    alerts_calc_path = ALERTS_CALC_FOLDER
     
     # Проверяем существование папок
     if not os.path.exists(k_lines_path):

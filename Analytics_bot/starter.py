@@ -4,8 +4,10 @@ import subprocess
 import datetime
 import os
 import sys
+import asyncio
 
 from logger import logger
+from k_line_downloader import download_current_1m_Candles
 from config import *
 
 class ScriptStarter:
@@ -150,6 +152,17 @@ class ScriptStarter:
                 process.kill()
         logger.info(MAIN_SCRIPT_NAME + "Все фоновые процессы остановлены")
 
+
+def doTick():
+
+    logger.info(f"✅ Запущено скачивание данных минутных свеч...")
+    asyncio.run(download_current_1m_Candles())
+
+
+
+    return
+
+
 # Создаем экземпляр и запускаем
 starter = ScriptStarter()
 
@@ -164,8 +177,12 @@ logger.info(MAIN_SCRIPT_NAME + "Скрипт-стартер запущен. Фо
 try:
     while True:
         schedule.run_pending()
-        time.sleep(0.1)
+        doTick()
+
+        time.sleep(0.5)
+
 except KeyboardInterrupt:
     logger.warning(MAIN_SCRIPT_NAME + "Получен сигнал прерывания...")
+
 finally:
     starter.cleanup()

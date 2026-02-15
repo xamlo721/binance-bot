@@ -6,51 +6,28 @@ import time
 from datetime import datetime
 import glob
 from concurrent.futures import ThreadPoolExecutor
-import warnings
 from logger import logger
 from config import *
-warnings.filterwarnings('ignore')
 
-def ensure_directories():
+from filestorage.file_storage_utils import read_1m_candles_from_csv
+from filestorage.file_storage_utils import get_sorted_files
+from filestorage.file_storage_utils import cleanup_old_files
+
+def create_1h_directories():
     """Создает необходимые директории если они не существуют"""
-    Path(hdr_1h_K_LINES_DIR).mkdir(exist_ok=True)
-    Path(hdr_1h_RESULTS_DIR).mkdir(exist_ok=True)
+    Path(MINUTES_KLINE_FOLDER).mkdir(exist_ok=True)
+    Path(HOURS_KLINE_FOLDER).mkdir(exist_ok=True)
 
-def get_sorted_files():
-    """Возвращает отсортированный список самых новых файлов по имени"""
-    files = glob.glob(os.path.join(hdr_1h_K_LINES_DIR, "K_line_*.csv"))
-    files_sorted = sorted(files)
-    newest_files = files_sorted[-hdp_1h_FILES_TO_WORK:]
-    return newest_files
-
-def read_file(file):
-    """Чтение одного файла с обработкой ошибок"""
-    try:
-        df = pd.read_csv(file)
-        # Используем только нужные колонки для экономии памяти
-        required_columns = ['symbol', 'open', 'close', 'high', 'low', 'quote_volume', 
-                          'taker_buy_base_volume', 'taker_buy_quote_volume', 'trades', 'open_time']
-        # Проверяем, что все требуемые колонки присутствуют
-        missing_columns = [col for col in required_columns if col not in df.columns]
-        if missing_columns:
-            logger.error(hdp_1h_SCRIPT_NAME + f"В файле {file} отсутствуют колонки: {missing_columns}")
-            return None
-        df = df[required_columns]
-        return df
-    except Exception as e:
-        logger.error(hdp_1h_SCRIPT_NAME + f"Ошибка чтения файла {file}: {e}")
-        return None
-
-def process_new_data():
+def process_new_data() -> bool:
     """Основная функция обработки данных"""
-    all_files = get_sorted_files()
+    all_files = get_sorted_files(MINUTES_KLINE_FOLDER, "K_line_*.csv", hdp_1h_FILES_TO_WORK)
     
     # Параллельное чтение файлов с правильной фильтрацией
     all_data = []
     with ThreadPoolExecutor() as executor:
-        results = executor.map(read_file, all_files)
+        results = executor.map(read_1m_candles_from_csv, all_files)
         for result in results:
-            if result is not None and not result.empty:
+            if result is not None:
                 all_data.append(result)
     
     if not all_data:
@@ -87,22 +64,45 @@ def process_new_data():
     
     # Выравниваем мультииндекс колонок
     result_df.columns = [
-        'open', 'close', 'high', 'high_std', 'low', 'low_std',
-        'quote_volume_1m_avg', 'quote_volume_std', 'total_volume',  # total_volume добавлена
-        'taker_buy_base_volume_1m_avg', 'taker_buy_base_volume_std',
-        'taker_buy_quote_volume_1m_avg', 'taker_buy_quote_volume_std',
-        'trades_1m_avg', 'trades_std', 
-        'volatility_1m_avg', 'volatility_std'
+        'open', 
+        'close', 
+        'high', 
+        'high_std', 
+        'low', 
+        'low_std',
+        'quote_volume_1m_avg', 
+        'quote_volume_std', 
+        'total_volume',  # total_volume добавлена
+        'taker_buy_base_volume_1m_avg', 
+        'taker_buy_base_volume_std',
+        'taker_buy_quote_volume_1m_avg', 
+        'taker_buy_quote_volume_std',
+        'trades_1m_avg', 
+        'trades_std', 
+        'volatility_1m_avg', 
+        'volatility_std'
     ]
     
     # Переупорядочиваем колонки для лучшей читаемости
     columns_order = [
-        'symbol', 'open', 'close', 'high', 'high_std', 'low', 'low_std',
-        'total_volume', 'quote_volume_1m_avg', 'quote_volume_std',
-        'taker_buy_base_volume_1m_avg', 'taker_buy_base_volume_std',
-        'taker_buy_quote_volume_1m_avg', 'taker_buy_quote_volume_std',
-        'trades_1m_avg', 'trades_std', 
-        'volatility_1m_avg', 'volatility_std'
+        'symbol', 
+        'open', 
+        'close', 
+        'high', 
+        'high_std', 
+        'low', 
+        'low_std',
+        'total_volume', 
+        'quote_volume_1m_avg', 
+        'quote_volume_std',
+        'taker_buy_base_volume_1m_avg', 
+        'taker_buy_base_volume_std',
+        'taker_buy_quote_volume_1m_avg', 
+        'taker_buy_quote_volume_std',
+        'trades_1m_avg', 
+        'trades_std', 
+        'volatility_1m_avg', 
+        'volatility_std'
     ]
     
     # Создаем DataFrame с результатами
@@ -111,36 +111,25 @@ def process_new_data():
     
     # Формируем имя файла с текущей датой и временем
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_file = os.path.join(hdr_1h_RESULTS_DIR, f"Historical_values_1h_{timestamp}.csv")
+    output_file = os.path.join(HOURS_KLINE_FOLDER, f"Historical_values_1h_{timestamp}.csv")
     # Сохраняем результаты
     result_df.to_csv(output_file, index=False)
     
     logger.info(hdp_1h_SCRIPT_NAME + f"Сохранен файл: Historical_values_1h_{timestamp}.csv")
     
     # Очищаем старые файлы
-    cleanup_result_files()
+    logger.info(hdp_1h_SCRIPT_NAME + f"Чистим устаревшие файлы.")
+    cleanup_old_files(HOURS_KLINE_FOLDER, "Historical_values_1h_*.csv", 20)
+    logger.info(hdp_1h_SCRIPT_NAME + f"Чистка окончена.")
     
     return True # Возвращаем успешное завершение
 
-def cleanup_result_files():
-    """Удаляет старые файлы результатов если их больше MAX_RESULT_FILES"""
-    files = glob.glob(os.path.join(hdr_1h_RESULTS_DIR, "Historical_values_1h_*.csv"))
-    files.sort()
-    
-    while len(files) >= hdp_1h_MAX_RESULT_FILES + 1:
-        oldest_file = files.pop(0)
-        try:
-            os.remove(oldest_file)
-            logger.info(hdp_1h_SCRIPT_NAME + f"Удален старый файл: {os.path.basename(oldest_file)}")
-        except OSError as e:
-            logger.error(hdp_1h_SCRIPT_NAME + f"Ошибка удаления файла {oldest_file}: {e}")
-
-def run_processing():
+def onTick():
     """Функция для однократного запуска обработки"""
     logger.info(hdp_1h_SCRIPT_NAME + "Запуск обработки данных...")
-    ensure_directories()
+    create_1h_directories()
     
-    all_files = get_sorted_files()
+    all_files = get_sorted_files(MINUTES_KLINE_FOLDER, "K_line_*.csv", hdp_1h_FILES_TO_WORK)
     if not all_files:
         logger.error(hdp_1h_SCRIPT_NAME + "Нет файлов для обработки в директории")
         return False
@@ -159,4 +148,4 @@ def run_processing():
     return success
 
 if __name__ == "__main__":
-    run_processing()
+    onTick()

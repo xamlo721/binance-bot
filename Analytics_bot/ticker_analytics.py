@@ -17,9 +17,9 @@ X_MULTIPLIER = 5.0  # Например, должно быть больше в 2 
 
 def init_alerts_folder():
     """Инициализировать папку для хранения алертов"""
-    if not os.path.exists(T_ANAL_ALERTS_FOLDER):
-        os.makedirs(T_ANAL_ALERTS_FOLDER)
-        logger.info(T_ANAL_SCRIPT_NAME + f"Создана папка для алертов: {T_ANAL_ALERTS_FOLDER}")
+    if not os.path.exists(ALERTS_FOLDER):
+        os.makedirs(ALERTS_FOLDER)
+        logger.info(T_ANAL_SCRIPT_NAME + f"Создана папка для алертов: {ALERTS_FOLDER}")
 
 def get_current_date_str():
     """Получить текущую дату в формате для имени файла (по UTC)"""
@@ -30,7 +30,7 @@ def get_alerts_file_path(date_str=None):
     if date_str is None:
         date_str = get_current_date_str()
     filename = f"alerts_{date_str}.csv"
-    return os.path.join(T_ANAL_ALERTS_FOLDER, filename)
+    return os.path.join(ALERTS_FOLDER, filename)
 
 def save_alert_to_file(ticker, reason, bot_token, chat_id, message_thread_id=None):
     """Сохранить алерт в файл с текущей датой по UTC"""
@@ -401,7 +401,7 @@ def main():
     logger.info(T_ANAL_SCRIPT_NAME + f"Папка Ticker_up: {T_ANAL_TICKER_UP_FOLDER}")
     logger.info(T_ANAL_SCRIPT_NAME + f"Папка Volume_10M: {T_ANAL_VOLUME_10M_FOLDER}")
     logger.info(T_ANAL_SCRIPT_NAME + f"Папка Volume_10H: {T_ANAL_VOLUME_10H_FOLDER}")
-    logger.info(T_ANAL_SCRIPT_NAME + f"Папка Alerts: {T_ANAL_ALERTS_FOLDER}")
+    logger.info(T_ANAL_SCRIPT_NAME + f"Папка Alerts: {ALERTS_FOLDER}")
     logger.info(T_ANAL_SCRIPT_NAME + f"Пороговое значение (X): {X_MULTIPLIER}")
     logger.info(T_ANAL_SCRIPT_NAME + f"{'='*60}")
     
@@ -409,13 +409,13 @@ def main():
     init_alerts_folder()
     
     # Проверяем существование папок
-    for folder in [T_ANAL_TICKER_UP_FOLDER, T_ANAL_VOLUME_10M_FOLDER, T_ANAL_VOLUME_10H_FOLDER, T_ANAL_ALERTS_FOLDER]:
+    for folder in [T_ANAL_TICKER_UP_FOLDER, T_ANAL_VOLUME_10M_FOLDER, T_ANAL_VOLUME_10H_FOLDER, ALERTS_FOLDER]:
         if not os.path.exists(folder):
             logger.error(T_ANAL_SCRIPT_NAME + f"Ошибка: Папка не существует: {folder}")
             return
     
     # Показываем существующие файлы алертов
-    alert_files = glob.glob(os.path.join(T_ANAL_ALERTS_FOLDER, "alerts_*.csv"))
+    alert_files = glob.glob(os.path.join(ALERTS_FOLDER, "alerts_*.csv"))
     if alert_files:
         logger.info(T_ANAL_SCRIPT_NAME + "Существующие файлы алертов:")
         for file in sorted(alert_files):

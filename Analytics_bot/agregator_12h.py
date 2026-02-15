@@ -77,7 +77,7 @@ class CSVFileHandler(FileSystemEventHandler):
         
         try:
             # Используем glob для более быстрого поиска файлов
-            pattern = os.path.join(aggr_K_LINES_1H_DIR, "*Historical_values_1h*.csv")
+            pattern = os.path.join(HOURS_KLINE_FOLDER, "*Historical_values_1h*.csv")
             h1_files = glob.glob(pattern)
             
             # Получаем время создания без сортировки всех файлов
@@ -203,7 +203,7 @@ def cleanup_result_files():
 
 def main():
     # Создаем папки если они не существуют
-    for folder in [aggr_K_LINES_DIN_DIR, aggr_K_LINES_1H_DIR, aggr_OUTPUT_FOLDER]:
+    for folder in [aggr_K_LINES_DIN_DIR, HOURS_KLINE_FOLDER, aggr_OUTPUT_FOLDER]:
         os.makedirs(folder, exist_ok=True)
     
     # Создаем и запускаем наблюдатель

@@ -206,8 +206,8 @@ class AlertsHandler(FileSystemEventHandler):
 
 def main():
     # Пути к папкам
-    alerts_folder = AC_alerts_folder
-    calc_folder = AC_calc_folder
+    alerts_folder = ALERTS_FOLDER
+    calc_folder = ALERTS_CALC_FOLDER
     
     # Проверяем существование основной папки
     if not os.path.exists(alerts_folder):

@@ -17,12 +17,12 @@ MAX_RESULT_FILES = 1                                            # Максиму
 
 def ensure_directories():
     """Создает необходимые директории если они не существуют"""
-    Path(hdr_1h_K_LINES_DIR).mkdir(exist_ok=True)
-    Path(hdr_1h_RESULTS_DIR).mkdir(exist_ok=True)
+    Path(MINUTES_KLINE_FOLDER).mkdir(exist_ok=True)
+    Path(HOURS_KLINE_FOLDER).mkdir(exist_ok=True)
 
 def get_sorted_files():
     """Возвращает отсортированный список самых новых файлов по имени"""
-    files = glob.glob(os.path.join(hdr_1h_K_LINES_DIR, "K_line_*.csv"))
+    files = glob.glob(os.path.join(MINUTES_KLINE_FOLDER, "K_line_*.csv"))
     # Сортируем файлы по имени (предполагая, что в имени есть timestamp)
     files_sorted = sorted(files)
     # Количество обрабатываемых файлов равно текущей минуте
@@ -123,7 +123,7 @@ def process_new_data():
 
     # Формируем имя файла с текущей датой и временем
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_file = os.path.join(hdr_1h_RESULTS_DIR, f"Historical_values_dynamic_{timestamp}.csv")
+    output_file = os.path.join(HOURS_KLINE_FOLDER, f"Historical_values_dynamic_{timestamp}.csv")
     # Сохраняем результаты
     result_df.to_csv(output_file, index=False)
     
@@ -136,7 +136,7 @@ def process_new_data():
 
 def cleanup_result_files():
     """Удаляет старые файлы результатов если их больше MAX_RESULT_FILES"""
-    files = glob.glob(os.path.join(hdr_1h_RESULTS_DIR, "Historical_values_dynamic_*.csv"))
+    files = glob.glob(os.path.join(HOURS_KLINE_FOLDER, "Historical_values_dynamic_*.csv"))
     files.sort()
     
     while len(files) >= MAX_RESULT_FILES + 1:

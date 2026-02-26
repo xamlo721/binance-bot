@@ -37,9 +37,6 @@ class AlertRecord:
     rpb_sl_5_percent: Optional[float] = None    # RPB со стопом 5%
     max_profit_percent: Optional[float] = None  # Максимальная прибыль в %
     
-    # Дополнительные поля
-    comment: Optional[str] = None                # Комментарий
-    created_at: int = field(default_factory=lambda: int(datetime.now().timestamp() * 1000))  # Время создания записи
 
     def to_dict(self) -> dict:
         """Преобразует объект в словарь для CSV"""
@@ -63,9 +60,7 @@ class AlertRecord:
             'RPB_(30%)_SL_3%': self.rpb_sl_3_percent if self.rpb_sl_3_percent is not None else pd.NA,
             'RPB_(30%)_SL_4%': self.rpb_sl_4_percent if self.rpb_sl_4_percent is not None else pd.NA,
             'RPB_(30%)_SL_5%': self.rpb_sl_5_percent if self.rpb_sl_5_percent is not None else pd.NA,
-            'max_proffit_%': self.max_profit_percent if self.max_profit_percent is not None else pd.NA,
-            'comment': self.comment if self.comment else '',
-            'created_at': self.created_at
+            'max_proffit_%': self.max_profit_percent if self.max_profit_percent is not None else pd.NA
         }
     
     @classmethod
@@ -97,9 +92,7 @@ class AlertRecord:
             rpb_sl_3_percent=clean_value(data.get('RPB_(30%)_SL_3%')),
             rpb_sl_4_percent=clean_value(data.get('RPB_(30%)_SL_4%')),
             rpb_sl_5_percent=clean_value(data.get('RPB_(30%)_SL_5%')),
-            max_profit_percent=clean_value(data.get('max_proffit_%')),
-            comment=clean_value(data.get('comment')),
-            created_at=int(data['created_at']) if 'created_at' in data else int(datetime.now().timestamp() * 1000)
+            max_profit_percent=clean_value(data.get('max_proffit_%'))
         )
     
     @classmethod

@@ -1,9 +1,24 @@
 import time
 import asyncio
+from pathlib import Path
+
+import sys
+
+from logger import logger
+from config import *
+
+src_path = Path(__file__).resolve().parent.parent
+analytics_bot_src_path = Path(__file__).resolve().parent
+sys.path.append(str(src_path))
+sys.path.append(str(analytics_bot_src_path))
+logger.warning(src_path)
+logger.warning(analytics_bot_src_path)
+
 from datetime import datetime
 
 from typing import Optional
 from typing import Dict
+from typing import List
 
 from AnalyticsBot.downloader import download_current_1m_Candles
 from AnalyticsBot.downloader import download_more_candles
@@ -24,9 +39,6 @@ from analytic_utils import calculate_10m_volumes_sidedWindow
 
 from binance_utils.my_binance_utils import get_trading_symbols
 
-from logger import logger
-from config import *
-
 from ramstorage.ram_storage_utils import get_recent_1m_klines
 from ramstorage.ram_storage_utils import save_10m_volumes
 from ramstorage.ram_storage_utils import save_klines_to_ram
@@ -38,18 +50,21 @@ from ramstorage.ram_storage_utils import candle_1h_records
 def getTrackedTickers() -> list[str]:
     symbols = get_trading_symbols()
     if not symbols:
-        logger.error("❌ Не удалось получить список тикеров")
         return []
         
-    logger.info(f"✅ Найдено торгующихся тикеров: {len(symbols)}")
     return symbols
 
 def doTick():
+    """
+    Функция ежеминутного тика
+    """
 
+    logger.info("    # ====================== doTick ========================= #")
+    logger.info("    Обновляем список тикеров...")
     # TODO: Необходимо отработать моменты, когда отслеживаемые тикеры закрываются для торговли
     trackable_tickers: list[str] = getTrackedTickers()
 
-    logger.info(f"✅ Запущено скачивание данных 1 минут свеч...")
+    logger.info(f"✅ Скачивание данные свеч за последнюю минуту...")
 
     # ======================================================= # 
     klines_1m_full = asyncio.run(download_more_candles(trackable_tickers, MINUTE_CANDLES_LIMIT, datetime.now()))
@@ -153,18 +168,6 @@ def doTick():
     # Скрипт автономный и запускается скриптом "starter.py", а далее самостоятельно отслеживает появление новых файлов в папке "/srv/ftp/Bot_v2/Data/Ticker_up"  и при появлении свежего файла - делает обработку
 
 
-
-    # ======================================================= # 
-
-
-
-    # ======================================================= # 
-
-
-
-    # ======================================================= # 
-
-
     # alerts copy
     alert: list[AlertRecord] = get_recent_alerts(1)
     update_current_alert(alert)
@@ -172,22 +175,58 @@ def doTick():
     return
 
 
-def main():
+def start():
     try:
         logger.info("Скрипт-стартер запущен.")
-        
+        logger.info(f"    Получаю список актуальных тикеров...")
+
         # TODO: Необходимо отработать моменты, когда отслеживаемые тикеры закрываются для торговли
         trackable_tickers: list[str] = getTrackedTickers()
         if len(trackable_tickers) == 0:
+            logger.error("❌ Не удалось получить список тикеров")
             return
-    
-        logger.info(f"✅ Запущено предварительное скачивание архивных данных минутных свеч...")
-        asyncio.run(download_more_candles(trackable_tickers, MINUTE_CANDLES_LIMIT, datetime.now()))
+        logger.info(f"✅ Найдено торгующихся тикеров: {len(trackable_tickers)}")
+
+        logger.info(f"✅ Запущено предварительное скачивание архивных данных {MINUTE_CANDLES_LIMIT} минутных свеч...")
+        
+        download_start_time = time.time()
+        klines_1m_full: List[List[CandleRecord]] = asyncio.run(download_more_candles(trackable_tickers, MINUTE_CANDLES_LIMIT, datetime.now()))
+        download_stop_time = time.time()
         logger.info(f"✅ Скачивание завершено.")
 
-        # FIXME: Если скачивание шло несколько минут, то прошедшие минуты тоже надо докачать
 
-        logger.info(f"Запускаю основной цикл анализа...")
+        # Если скачивание шло несколько минут, то прошедшие минуты тоже надо докачать
+        duration_minutes: float = (download_stop_time - download_start_time)/60   
+        while int(duration_minutes) > 0:
+            duration_seconds = download_stop_time - download_start_time
+            logger.warning(f"⚠️ Скачивание заняло {duration_seconds:.2f} секунд.")
+            logger.warning(f"⚠️ За это время уже сформировалось {int(duration_minutes) } минутных свечей.")
+            logger.warning( "⚠️ Необходимо запустить скачивание оставшихся свечей.")
+
+            # Запускаем второй этап скачивания
+            logger.info(f"✅ Запущено предварительное скачивание архивных данных {int(duration_minutes)} минутных свеч...")
+            download_start_time = time.time()
+            sub_klines: List[List[CandleRecord]] = asyncio.run(download_more_candles(trackable_tickers, int(duration_minutes), datetime.now()))
+            download_stop_time = time.time()
+            logger.info(f"✅ Скачивание завершено.")
+            klines_1m_full.extend(sub_klines)
+
+            # Пересчитываем количество минут, которые ещё нужно скачать
+            duration_minutes = (download_stop_time - download_start_time) / 60
+
+        logger.info(f"✅ Актуальные архивные данные за {len(klines_1m_full)} минут получены.")
+
+        if klines_1m_full:
+            for candles in klines_1m_full:
+                save_klines_to_ram(candles)
+                open_time_dt = datetime.fromtimestamp(candles[0].open_time / 1000)
+                logger.info(f"Сохранена минута {open_time_dt}." )
+        else:
+            logger.warning("❌ Не удалось загрузить исторические данные")
+
+
+        logger.info(f"    Запускаю основной аналитический цикл анализа...")
+
         while True:
             
             doTick()
@@ -198,4 +237,5 @@ def main():
         logger.warning("Получен сигнал прерывания...")
 
 
-main()
+start()
+

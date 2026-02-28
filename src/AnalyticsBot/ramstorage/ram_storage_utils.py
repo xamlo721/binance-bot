@@ -5,9 +5,9 @@ from typing import List
 from logger import logger
 from config import *
 
-from CandleRecord import CandleRecord 
-from HoursRecord import HoursRecord 
-from AlertRecord import AlertRecord 
+from AnalyticsBot.ramstorage.CandleRecord import CandleRecord 
+from AnalyticsBot.ramstorage.HoursRecord import HoursRecord 
+from AnalyticsBot.ramstorage.AlertRecord import AlertRecord 
 
 # Список всех отметок за 60 минут 
 candle_1m_records: list[list[CandleRecord]]= [[] for _ in range(MINUTE_CANDLES_LIMIT)]

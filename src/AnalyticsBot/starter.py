@@ -42,7 +42,7 @@ def update_10m_volumes() -> bool:
     volumes: dict[str, float] = {} 
     for candle_list in latest_1m_klines:
         for candle in candle_list:
-            volumes[candle.symbol] = volumes.get(candle.symbol, 0) + candle.quote_volume
+            volumes[candle.symbol] = volumes.get(candle.symbol, 0) + candle.quote_assets_volume
 
     # Сохраняем результат
     save_10m_volumes(volumes)

@@ -56,48 +56,6 @@ class BinanceRateLimiter:
             # Добавляем текущий запрос
             self.request_timestamps.append(now)
 
-class RateLimitedSession:
-    """Обертка для aiohttp.ClientSession с ограничением запросов"""
-    
-    def __init__(self, session: aiohttp.ClientSession, limiter: BinanceRateLimiter):
-        self.session = session
-        self.limiter = limiter
-        
-    async def get(self, url: str, **kwargs):
-        await self.limiter.wait_if_needed()
-        return await self.session.get(url, **kwargs)
-    
-    async def close(self):
-        await self.session.close()
-
-# Глобальный экземпляр ограничителя
-_binance_limiter = BinanceRateLimiter(requests_per_minute=BINANCE_API_LIMIT)
-
-# ============== Декоратор для синхронных функций ==============
-
-def rate_limited_sync(func: Callable) -> Callable:
-    """Декоратор для синхронных функций с ограничением запросов"""
-    def wrapper(*args, **kwargs):
-        global _binance_limiter
-        
-        # Синхронное ожидание
-        loop = None
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        
-        if loop.is_running():
-            # Если цикл уже запущен, создаем задачу
-            future = asyncio.run_coroutine_threadsafe(_binance_limiter.wait_if_needed(), loop)
-            future.result()
-        else:
-            # Иначе запускаем корутину
-            loop.run_until_complete(_binance_limiter.wait_if_needed())
-        
-        return func(*args, **kwargs)
-    return wrapper
 
 # ============== Модифицированные функции с ограничением ==============
 
@@ -210,42 +168,6 @@ async def fetch_all_tickers_volumes(symbols, countDepth: int, max_concurrent=THR
                 logger.info(f"Обработано {completed}/{len(symbols)} тикеров")
         
         return results
-
-
-# Функция для конвертации результата в формат list[list[CandleRecord]]
-def convert_to_periods_list(results: dict, limit: int) -> list[list[CandleRecord]]:
-    """
-    Конвертирует результаты из словаря в список списков по минутам
-    
-    Args:
-        results: Словарь {symbol: [CandleRecord]} или {symbol: CandleRecord}
-        limit: Количество минут
-    
-    Returns:
-        list[list[CandleRecord]]: Список из limit списков, где каждый список - свечи за одну минуту
-    """
-    if not results:
-        return []
-    
-    # Определяем, что у нас: словарь со списками или с отдельными свечами
-    first_value = next(iter(results.values()))
-    
-    if isinstance(first_value, list):
-        # Уже списки свечей
-        # Создаем список минут
-        periods = [[] for _ in range(limit)]
-        
-        for symbol, candles in results.items():
-            for i, candle in enumerate(candles):
-                if i < limit:
-                    periods[i].append(candle)
-        
-        return periods
-    else:
-        # Отдельные свечи
-        periods = [[] for _ in range(limit)]
-        periods[0] = list(results.values())
-        return periods
 
 async def _fetch_with_limits(session, symbol, count, semaphore, limiter, fetch_func, *args, **kwargs):
     """Вспомогательная функция для выполнения запросов с ограничениями"""
@@ -365,37 +287,3 @@ async def fetch_ticker_1m_volumes_for_time(session, symbol, count: int, limiter,
         logger.error(f"❌ Ошибка для {symbol}: {str(e)}")
     
     return None
-    
-
-# ============== Утилита для пакетной обработки ==============
-
-async def batch_process_symbols(symbols: List[str], 
-                                process_func: Callable, 
-                                batch_size: int = 100,
-                                delay_between_batches: float = 2.0) -> List[Any]:
-    """
-    Обрабатывает символы пакетами для соблюдения лимитов API
-    
-    Args:
-        symbols: Список символов
-        process_func: Асинхронная функция для обработки пакета
-        batch_size: Размер пакета
-        delay_between_batches: Задержка между пакетами в секундах
-    
-    Returns:
-        List[Any]: Результаты обработки
-    """
-    results = []
-    
-    for i in range(0, len(symbols), batch_size):
-        batch = symbols[i:i + batch_size]
-        logger.info(f"Обработка пакета {i//batch_size + 1}/{(len(symbols)-1)//batch_size + 1}")
-        
-        batch_results = await process_func(batch)
-        results.extend(batch_results)
-        
-        # Задержка между пакетами
-        if i + batch_size < len(symbols):
-            await asyncio.sleep(delay_between_batches)
-    
-    return results

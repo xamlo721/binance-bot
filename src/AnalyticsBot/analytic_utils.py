@@ -168,10 +168,10 @@ def calculate_1h_dynamic(current_candles: list[list[CandleRecord]]) -> Optional[
         # Собираем значения для статистики
         highs = [c.high for c in candles]
         lows = [c.low for c in candles]
-        volumes = [c.quote_volume for c in candles]
+        volumes = [c.quote_assets_volume for c in candles]
         taker_buy_base = [c.taker_buy_base_volume for c in candles]
         taker_buy_quote = [c.taker_buy_quote_volume for c in candles]
-        trades = [c.trades for c in candles]
+        trades = [c.num_of_trades for c in candles]
         volatilities = [(c.high - c.low) / c.open for c in candles]
         
         # Создаем словарь с данными

@@ -22,20 +22,45 @@ from analytic_utils import calculate_1h_records
 from analytic_utils import aggregate_10h_volumes
 from analytic_utils import calculate_10m_volumes_sidedWindow
 
+from binance_utils.my_binance_utils import get_trading_symbols
+
 from logger import logger
 from config import *
 
 from ramstorage.ram_storage_utils import get_recent_1m_klines
 from ramstorage.ram_storage_utils import save_10m_volumes
+from ramstorage.ram_storage_utils import save_klines_to_ram
 
 from ramstorage.ram_storage_utils import candle_1m_records
 from ramstorage.ram_storage_utils import candle_1h_records
 
 
+def getTrackedTickers() -> list[str]:
+    symbols = get_trading_symbols()
+    if not symbols:
+        logger.error("❌ Не удалось получить список тикеров")
+        return []
+        
+    logger.info(f"✅ Найдено торгующихся тикеров: {len(symbols)}")
+    return symbols
+
 def doTick():
 
+    # TODO: Необходимо отработать моменты, когда отслеживаемые тикеры закрываются для торговли
+    trackable_tickers: list[str] = getTrackedTickers()
+
     logger.info(f"✅ Запущено скачивание данных 1 минут свеч...")
-    asyncio.run(download_current_1m_Candles())
+
+    # ======================================================= # 
+    klines_1m_full = asyncio.run(download_more_candles(trackable_tickers, MINUTE_CANDLES_LIMIT, datetime.now()))
+    if klines_1m_full:
+        for candles in klines_1m_full:
+            save_klines_to_ram(candles)
+            open_time_dt = datetime.fromtimestamp(candles[0].open_time / 1000)
+            logger.info(f"Сохранена минута {open_time_dt}." )
+    else:
+        logger.warning("❌ Не удалось загрузить исторические данные")
+
     # ======================================================= # 
 
     calculate_1h_records(candle_1m_records, candle_1h_records)
@@ -147,19 +172,30 @@ def doTick():
     return
 
 
-try:
-    logger.info("Скрипт-стартер запущен. Фоновые процессы активны.")
-
-    logger.info(f"Запущено скачивание данных 60 минутных свеч...")
-    asyncio.run(download_more_candles(MINUTE_CANDLE_FILE_LIMIT, datetime.now()))
-    logger.info(f"✅ Скачивание завершено.")
-
-    logger.info(f"Запускаю основной цикл анализа...")
-    while True:
+def main():
+    try:
+        logger.info("Скрипт-стартер запущен.")
         
-        doTick()
+        # TODO: Необходимо отработать моменты, когда отслеживаемые тикеры закрываются для торговли
+        trackable_tickers: list[str] = getTrackedTickers()
+        if len(trackable_tickers) == 0:
+            return
+    
+        logger.info(f"✅ Запущено предварительное скачивание архивных данных минутных свеч...")
+        asyncio.run(download_more_candles(trackable_tickers, MINUTE_CANDLES_LIMIT, datetime.now()))
+        logger.info(f"✅ Скачивание завершено.")
 
-        time.sleep(1)
+        # FIXME: Если скачивание шло несколько минут, то прошедшие минуты тоже надо докачать
 
-except KeyboardInterrupt:
-    logger.warning("Получен сигнал прерывания...")
+        logger.info(f"Запускаю основной цикл анализа...")
+        while True:
+            
+            doTick()
+
+            time.sleep(1)
+
+    except KeyboardInterrupt:
+        logger.warning("Получен сигнал прерывания...")
+
+
+main()

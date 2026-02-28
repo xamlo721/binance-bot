@@ -14,8 +14,30 @@ from ramstorage.HoursRecord import HoursRecord
 from ramstorage.AlertRecord import AlertRecord
 
 from ramstorage.ram_storage_utils import save_calc_alert_to_ram
+from ramstorage.ram_storage_utils import get_recent_1m_klines
+from ramstorage.ram_storage_utils import save_10m_volumes
 
 current_alerts: list[AlertRecord] = []
+
+
+def calculate_10m_volumes_sidedWindow() -> bool:
+    # Получаем 10 самых свежих файлов
+    latest_1m_klines = get_recent_1m_klines(10)
+    
+    if len(latest_1m_klines) < 10:
+        logger.warning(f"Найдено только {len(latest_1m_klines)} файлов, нужно 10. Пропускаем.")
+        return False
+    
+    # Рассчитываем объемы
+    volumes: dict[str, float] = {} 
+    for candle_list in latest_1m_klines:
+        for candle in candle_list:
+            volumes[candle.symbol] = volumes.get(candle.symbol, 0) + candle.quote_assets_volume
+
+    # Сохраняем результат
+    save_10m_volumes(volumes)
+    return True
+
 
 def update_current_alert(alerts: List[AlertRecord]):
     global current_alerts

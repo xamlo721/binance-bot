@@ -5,8 +5,8 @@ from datetime import datetime
 from typing import Optional
 from typing import Dict
 
-from k_line_downloader import download_current_1m_Candles
-from k_line_downloader import download_more_candles
+from AnalyticsBot.downloader import download_current_1m_Candles
+from AnalyticsBot.downloader import download_more_candles
 
 from ramstorage.AlertRecord import AlertRecord
 from ramstorage.CandleRecord import CandleRecord
@@ -20,6 +20,7 @@ from analytic_utils import update_current_alert
 from analytic_utils import agregate_12h_records
 from analytic_utils import calculate_1h_records
 from analytic_utils import aggregate_10h_volumes
+from analytic_utils import calculate_10m_volumes_sidedWindow
 
 from logger import logger
 from config import *
@@ -29,24 +30,6 @@ from ramstorage.ram_storage_utils import save_10m_volumes
 
 from ramstorage.ram_storage_utils import candle_1m_records
 from ramstorage.ram_storage_utils import candle_1h_records
-
-def update_10m_volumes() -> bool:
-    # Получаем 10 самых свежих файлов
-    latest_1m_klines = get_recent_1m_klines(10)
-    
-    if len(latest_1m_klines) < 10:
-        logger.warning(f"Найдено только {len(latest_1m_klines)} файлов, нужно 10. Пропускаем.")
-        return False
-    
-    # Рассчитываем объемы
-    volumes: dict[str, float] = {} 
-    for candle_list in latest_1m_klines:
-        for candle in candle_list:
-            volumes[candle.symbol] = volumes.get(candle.symbol, 0) + candle.quote_assets_volume
-
-    # Сохраняем результат
-    save_10m_volumes(volumes)
-    return True
 
 
 def doTick():
@@ -58,7 +41,7 @@ def doTick():
     calculate_1h_records(candle_1m_records, candle_1h_records)
     # ======================================================= # 
 
-    if update_10m_volumes():
+    if calculate_10m_volumes_sidedWindow():
         logger.info(f"✅ Обновление 10м интервалов объёмов успешно.")
 
     # ======================================================= # 

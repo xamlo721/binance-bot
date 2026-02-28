@@ -46,12 +46,12 @@ def update_current_alert(alerts: List[AlertRecord]):
         if alerts != current_alerts:
             logger.info(f"Обнаружен новый набор алертов!: {alerts[0].time}")
             current_alerts = alerts
-            logger.info(ALLERTS_COPY_SCRIPT_NAME + f"Загружено {len(alerts)} строк из файла")
+            logger.info(f"Загружено {len(alerts)} строк из файла")
 
             process_new_rows(alerts)
 
     except Exception as e:
-        logger.error(ALLERTS_COPY_SCRIPT_NAME + f"Ошибка при обновлении текущего файла: {e}")
+        logger.error(f"Ошибка при обновлении текущего файла: {e}")
 
 def process_new_rows(new_alerts: List[AlertRecord]):
     """Обработать новые строки"""
@@ -62,11 +62,11 @@ def process_new_rows(new_alerts: List[AlertRecord]):
 
         # Проверяем, есть ли значения цен
         if alert.buy_short_price and alert.min_price and alert.max_price:
-            logger.info(ALLERTS_COPY_SCRIPT_NAME + f"Найдены цены для {alert.ticker}")
+            logger.info(f"Найдены цены для {alert.ticker}")
             processed_alerts.append(alert)
         else:
             # TODO: А как они могут быть не заполнены? 
-            logger.warning(ALLERTS_COPY_SCRIPT_NAME + f"Цены не заполнены для {alert.ticker}, пропускаем")
+            logger.warning(f"Цены не заполнены для {alert.ticker}, пропускаем")
 
     save_calc_alert_to_ram(processed_alerts)
 
@@ -155,7 +155,7 @@ def calculate_1h_dynamic(current_candles: list[list[CandleRecord]]) -> Optional[
         logger.info("Нет данных для обработки hdr_dynamic")
         return None
     
-    logger.info(hdr_dyn_SCRIPT_NAME + f"Обрабатываем {len(current_candles)} минут")
+    logger.info(f"Обрабатываем {len(current_candles)} минут")
 
     # Группируем свечи по символам
     symbols_data: dict[str, list[CandleRecord]] = {}
@@ -240,11 +240,11 @@ def process_single_records(records: list[HoursRecord]):
             if symbol not in max_highs or high > max_highs[symbol]:
                 max_highs[symbol] = high
         
-        logger.debug(agr_SCRIPT_NAME + f"Обработано {len(records)} записей, найдено {len(max_highs)} символов")
+        logger.debug(f"Обработано {len(records)} записей, найдено {len(max_highs)} символов")
         return max_highs
         
     except Exception as e:
-        logger.error(agr_SCRIPT_NAME + f"Ошибка при обработке записей: {e}")
+        logger.error(f"Ошибка при обработке записей: {e}")
         return {}
     
 def agregate_12h_records(hours_records: list[list[HoursRecord]]) -> Optional[Dict[str, float]]:
@@ -279,17 +279,17 @@ def agregate_12h_records(hours_records: list[list[HoursRecord]]) -> Optional[Dic
                             if symbol not in max_high_values or high > max_high_values[symbol]:
                                 max_high_values[symbol] = high
                 except Exception as e:
-                    logger.error(agr_SCRIPT_NAME + f"Ошибка при обработке записи: {e}")
+                    logger.error(f"Ошибка при обработке записи: {e}")
         
         if max_high_values:
-            logger.info(agr_SCRIPT_NAME + f"Обработано тикеров: {len(max_high_values)}")
+            logger.info(f"Обработано тикеров: {len(max_high_values)}")
             return max_high_values
         else:
-            logger.info(agr_SCRIPT_NAME + "Нет данных для обработки")
+            logger.info("Нет данных для обработки")
             return {}
         
     except Exception as e:
-        logger.error(agr_SCRIPT_NAME + f"Ошибка при обработке agregate_12h_records : {e}")
+        logger.error(f"Ошибка при обработке agregate_12h_records : {e}")
         return None
 
 

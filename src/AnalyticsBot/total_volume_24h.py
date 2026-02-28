@@ -31,17 +31,17 @@ def process_new_record(new_hour_record: list[HoursRecord]) -> dict[str, float]:
         else:
             request_count = TOTAL_V_H_COUNT
 
-        logger.info(total_v_SCRIPT_NAME + f"Будет обработано {request_count} предыдущих часовых записей")
+        logger.info(f"Будет обработано {request_count} предыдущих часовых записей")
 
         # Получаем предыдущие записи из RAM-хранилища
         previous_hours = get_recent_1h_klines(request_count)
 
         if not previous_hours:
-            logger.warning(total_v_SCRIPT_NAME + "Не найдено предыдущих часовых записей")
+            logger.warning("Не найдено предыдущих часовых записей")
             return {}
 
         if len(previous_hours) != request_count:
-            logger.warning(total_v_SCRIPT_NAME + "Найдено недостаточно предыдущих записей")
+            logger.warning("Найдено недостаточно предыдущих записей")
             return {}
 
         # Объединяем все записи: текущий час + предыдущие
@@ -54,11 +54,11 @@ def process_new_record(new_hour_record: list[HoursRecord]) -> dict[str, float]:
             for symbol, volume in hour_sums.items():
                 total_volumes[symbol] = total_volumes.get(symbol, 0.0) + volume
 
-        logger.info(total_v_SCRIPT_NAME + f"Обработано уникальных тикеров: {len(total_volumes)}")
+        logger.info(f"Обработано уникальных тикеров: {len(total_volumes)}")
         return total_volumes
 
     except Exception as e:
-        logger.error(total_v_SCRIPT_NAME + f"Ошибка при обработке: {e}")
+        logger.error(f"Ошибка при обработке: {e}")
         return {}
 
 # TOTAL_V_K_LINES_DIN_DIR

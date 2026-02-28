@@ -10,12 +10,12 @@ from HoursRecord import HoursRecord
 from AlertRecord import AlertRecord 
 
 # Список всех отметок за 60 минут 
-candle_1m_records: list[list[CandleRecord]]= [[] for _ in range(MINUTE_CANDLE_FILE_LIMIT)]
+candle_1m_records: list[list[CandleRecord]]= [[] for _ in range(MINUTE_CANDLES_LIMIT)]
 candle_1h_records: list[list[HoursRecord]]= []
 dynamic_1h_records: list[HoursRecord]= []
 
-alerts_records: list[list[AlertRecord]]= [[] for _ in range(MINUTE_CANDLE_FILE_LIMIT)]
-alerts_calc_records: list[list[AlertRecord]]= [[] for _ in range(MINUTE_CANDLE_FILE_LIMIT)]
+alerts_records: list[list[AlertRecord]]= [[] for _ in range(MINUTE_CANDLES_LIMIT)]
+alerts_calc_records: list[list[AlertRecord]]= [[] for _ in range(MINUTE_CANDLES_LIMIT)]
 volume_10m_sliding_window: dict[str, float] = {} 
 
 
@@ -152,7 +152,7 @@ def clean_old_alerts_from_memory(hours: int = 24):
             # Оставляем только алерты новее cutoff_time
             alerts_records[i] = [alert for alert in period if alert.time >= cutoff_time]
     
-    logger.info(T_ANAL_SCRIPT_NAME + f"Очищены алерты старше {hours} часов")
+    logger.info(f"Очищены алерты старше {hours} часов")
 
 def save_klines_to_ram(results: List[CandleRecord]):
     """Сохраняет свечи в оперативную память с скользящим окном в 180 минут"""

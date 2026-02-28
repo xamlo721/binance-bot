@@ -28,14 +28,14 @@ async def download_more_candles(count: int, datetime: datetime):
     # Конвертируем datetime в timestamp в миллисекундах
     end_timestamp = int(datetime.timestamp() * 1000)
 
-    logger.info(k_line_SCRIPT_NAME + f"Загрузка {count} минут начиная от {datetime}.")
+    logger.info(f"Загрузка {count} минут начиная от {start_time}.")
     
     # Скачиваем свечи для текущей минуты
     period_candles = await fetch_all_tickers_volumes_for_time(symbols, count, end_timestamp)
     
     if len(period_candles) != count: 
-            logger.info(k_line_SCRIPT_NAME + f"У нас что-то пошло не так при загрузке {count} минутных начиная от {datetime}.")
-            logger.info(k_line_SCRIPT_NAME + f"Скачано только {len(period_candles)} минутных наборов")
+            logger.info(f"У нас что-то пошло не так при загрузке {count} минутных начиная от {start_time}.")
+            logger.info(f"Скачано только {len(period_candles)} минутных наборов")
             return
  
     for candles in period_candles:
@@ -46,7 +46,7 @@ async def download_more_candles(count: int, datetime: datetime):
 
     
     end_time = time.time()
-    logger.info(k_line_SCRIPT_NAME + f"Всего загружено {len(period_candles)} минут за {end_time - start_time:.2f} секунд")
+    logger.info(f"Всего загружено {len(period_candles)} минут за {end_time - start_ts:.2f} секунд")
 
 
 async def download_current_1m_Candles():
@@ -61,7 +61,7 @@ async def download_current_1m_Candles():
     candles = await fetch_all_tickers_volumes(symbols, 1, max_concurrent=200)
     
     if not candles:
-        logger.error(k_line_SCRIPT_NAME + "❌ Не удалось получить данные по тикерам")
+        logger.error("❌ Не удалось получить данные по тикерам")
         return
     
         

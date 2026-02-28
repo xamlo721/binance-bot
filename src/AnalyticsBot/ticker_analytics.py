@@ -68,13 +68,13 @@ def process_tickers_analytics(tickers: List[str], volume_10m_dict: Dict[str, flo
 
         if ok:
             alerts.append((ticker, message))
-            logger.info(T_ANAL_SCRIPT_NAME + f"🚨 #{ticker}: {message}")
+            logger.info(f"🚨 #{ticker}: {message}")
         else:
             # Для отладки можно логировать первые несколько тикеров
             if processed_count <= 10:
-                logger.info(T_ANAL_SCRIPT_NAME + f"{ticker}: {message}")
+                logger.info(f"{ticker}: {message}")
 
-    logger.info(T_ANAL_SCRIPT_NAME + f"Обработано тикеров: {processed_count}")
-    logger.info(T_ANAL_SCRIPT_NAME + f"Найдено сработавших: {len(alerts)}")
+    logger.info(f"Обработано тикеров: {processed_count}")
+    logger.info(f"Найдено сработавших: {len(alerts)}")
 
     return alerts

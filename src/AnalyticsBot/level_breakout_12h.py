@@ -48,9 +48,9 @@ def process_level_breakout_12h(k_line_records: List[CandleRecord],aggregated_hig
             sorted_tickers = dict(sorted(tickers_up.items(), key=lambda x: x[1], reverse=True))
             return sorted_tickers
         else:
-            logger.info(lb_SCRIPT_NAME + "Тикеров с превышением high не найдено")
+            logger.info("Тикеров с превышением high не найдено")
             return {}
         
     except Exception as e:
-        logger.error(lb_SCRIPT_NAME + f"Ошибка при обработке данных: {e}")
+        logger.error(f"Ошибка при обработке данных: {e}")
         return None

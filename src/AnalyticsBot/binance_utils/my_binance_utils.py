@@ -140,29 +140,38 @@ async def fetch_ticker_1m_volumes(session, symbol, limiter, candleDepth: int = 1
     
     try:
         async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as response:
+
             if response.status == 200:
                 data = await response.json()
+
                 if data and len(data) > 0:
                     kline = data[0]
                     close_time = kline[6]
+
                     if close_time < current_time:
+
+                        # Структура, согласно документации
+                        # https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Kline-Candlestick-Data
                         return CandleRecord(
                             symbol=symbol,
+                            open_time=kline[0],
                             open=float(kline[1]),
                             high=float(kline[2]),
                             low=float(kline[3]),
                             close=float(kline[4]),
                             volume=float(kline[5]),
-                            quote_volume=float(kline[7]),
+                            close_time=int(kline[6]),
+                            quote_assets_volume=float(kline[7]),
+                            num_of_trades=kline[8],
                             taker_buy_base_volume=float(kline[9]),
-                            taker_buy_quote_volume=float(kline[10]),
-                            trades=kline[8],
-                            open_time=kline[0]
+                            taker_buy_quote_volume=float(kline[10])
                         )
+                    
             elif response.status == 429:
                 logger.error(f"Лимит запросов превышен для {symbol}. Статус 429")
                 # Дополнительное ожидание при 429 ошибке
                 await asyncio.sleep(5)
+
             else:
                 logger.error(f"Ошибка HTTP {response.status} для {symbol}")
                 await asyncio.sleep(5)
@@ -328,18 +337,21 @@ async def fetch_ticker_1m_volumes_for_time(session, symbol, count: int, limiter,
                     
                     candles = []
                     for kline in data:
+                        # Структура, согласно документации
+                        # https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Kline-Candlestick-Data
                         candle = CandleRecord(
                             symbol=symbol,
+                            open_time=kline[0],
                             open=float(kline[1]),
                             high=float(kline[2]),
                             low=float(kline[3]),
                             close=float(kline[4]),
                             volume=float(kline[5]),
-                            quote_volume=float(kline[7]),
+                            close_time=int(kline[6]),
+                            quote_assets_volume=float(kline[7]),
+                            num_of_trades=kline[8],
                             taker_buy_base_volume=float(kline[9]),
-                            taker_buy_quote_volume=float(kline[10]),
-                            trades=kline[8],
-                            open_time=kline[0]
+                            taker_buy_quote_volume=float(kline[10])
                         )
                         candles.append(candle)
                     logger.debug(f"Загружено {len(candles)} свечей для {symbol}")

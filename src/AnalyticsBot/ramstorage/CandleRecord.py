@@ -14,15 +14,17 @@ class CandleRecord:
     # Low price - минимальная цена за период
     low: float
     # Volume - объем базового актива
-    volume: float                      
+    volume: float
+    # Close time - время закрытия свечи
+    close_time: int                       
     # Quote asset volume - объем в котировочной валюте
-    quote_volume: float
+    quote_assets_volume: float
     # Taker buy base asset volume - объем покупок базового актива
     taker_buy_base_volume: float
     # Taker buy quote asset volume - объем покупок котировочного актива
     taker_buy_quote_volume: float
     # Number of trades - количество сделок
-    trades: int
+    num_of_trades: int
     # Open time - время открытия свечи
     open_time: int 
 
@@ -32,12 +34,14 @@ class CandleRecord:
             'symbol': self.symbol,
             'open': self.open,
             'close': self.close,
+            'volume': self.volume,
+            'close_time': self.close_time,
             'high': self.high,
             'low': self.low,
-            'quote_volume': self.quote_volume,
+            'quote_volume': self.quote_assets_volume,
             'taker_buy_base_volume': self.taker_buy_base_volume,
             'taker_buy_quote_volume': self.taker_buy_quote_volume,
-            'trades': self.trades,
+            'trades': self.num_of_trades,
             'open_time': self.open_time
         }
 

@@ -21,3 +21,8 @@ TOTAL_V_MAX_RESULT_FILES = 2                                                # М
 
 #val 10h
 VAL_10H_MAX_RESULT_FILES = 1                                            # Максимум файлов результата
+
+
+
+BINANCE_API_LIMIT: int = 800 #1200
+THREAD_POOL_SIZE: int = 4 # 30

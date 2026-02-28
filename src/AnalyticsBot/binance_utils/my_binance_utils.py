@@ -4,6 +4,8 @@ import aiohttp
 import asyncio
 
 from logger import logger
+from AnalyticsBot.config import *
+
 from datetime import datetime
 
 from ramstorage.ram_storage_utils import CandleRecord
@@ -13,9 +15,6 @@ from typing import List
 from typing import Optional
 from typing import Callable
 from typing import Any
-
-BINANCE_API_LIMIT: int = 800 #1200
-THREAD_POOL_SIZE: int = 12 # 30
 
 # ============== Rate Limiter для Binance API ==============
 

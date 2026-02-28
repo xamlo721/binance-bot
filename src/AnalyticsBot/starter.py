@@ -42,6 +42,7 @@ from binance_utils.my_binance_utils import get_trading_symbols
 from ramstorage.ram_storage_utils import get_recent_1m_klines
 from ramstorage.ram_storage_utils import save_10m_volumes
 from ramstorage.ram_storage_utils import save_klines_to_ram
+from ramstorage.ram_storage_utils import is_storage_consistent
 
 from ramstorage.ram_storage_utils import candle_1m_records
 from ramstorage.ram_storage_utils import candle_1h_records
@@ -223,7 +224,15 @@ def start():
                 logger.info(f"Сохранена минута {open_time_dt}." )
         else:
             logger.warning("❌ Не удалось загрузить исторические данные")
+        logger.info(f"Записываю данные в хранилище...")
 
+
+        logger.info(f"Запускаю проверку хранилища на консистентность...")
+
+        if not is_storage_consistent():
+            logger.error("Список candle_1m_records не содержит непрерывный диапазон минутных свечей.")
+            return
+        logger.info(f"✅ Проверка хранилища успешно пройдена.")
 
         logger.info(f"    Запускаю основной аналитический цикл анализа...")
 

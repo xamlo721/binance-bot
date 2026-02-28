@@ -9,7 +9,7 @@ from AnalyticsBot.ramstorage.CandleRecord import CandleRecord
 from AnalyticsBot.ramstorage.HoursRecord import HoursRecord 
 from AnalyticsBot.ramstorage.AlertRecord import AlertRecord 
 
-# Список всех отметок за 60 минут 
+# Список всех отметок за MINUTE_CANDLES_LIMIT минут 
 candle_1m_records: list[list[CandleRecord]]= [[] for _ in range(MINUTE_CANDLES_LIMIT)]
 candle_1h_records: list[list[HoursRecord]]= []
 dynamic_1h_records: list[HoursRecord]= []
@@ -18,11 +18,51 @@ alerts_records: list[list[AlertRecord]]= [[] for _ in range(MINUTE_CANDLES_LIMIT
 alerts_calc_records: list[list[AlertRecord]]= [[] for _ in range(MINUTE_CANDLES_LIMIT)]
 volume_10m_sliding_window: dict[str, float] = {} 
 
+def is_storage_consistent() -> bool:
+    """
+    Проверяет, что все списки ``list[CandleRecord]`` находятся внутри
+    ``candle_1m_records`` последовательно по времени и без разрывов.
+
+    Возвращает ``True`` – если диапазон минутных свечей непрерывный,
+    иначе ``False`` и выводит предупреждение о найденном пропуске.
+    """
+    global candle_1m_records
+
+    # Список всех непустых периодов (минут)
+    periods = [p for p in candle_1m_records if p]
+    if not periods:
+        logger.debug("Нет минутных данных для проверки.")
+        return True
+
+    # Упорядочим их по времени открытия первой свечи
+    periods.sort(key=lambda p: p[0].open_time)
+
+    # Проверяем, что каждая следующая минута ровно 60000 мс позже предыдущей
+    for i in range(len(periods) - 1):
+        diff_ms = periods[i + 1][0].open_time - periods[i][0].open_time
+        if diff_ms != 60000:
+            logger.warning(
+                f"Разрыв между минутами "
+                f"{periods[i][0].open_time} и {periods[i+1][0].open_time}: Δ={diff_ms}мс"
+            )
+            return False
+
+    # Проверяем, что в диапазоне от первой до последней минуты нет пропусков
+    expected_count = (
+        periods[-1][0].open_time - periods[0][0].open_time
+    ) // 60000 + 1
+    if expected_count != len(periods):
+        logger.warning(
+            f"Найдено {len(periods)} минут, но ожидается "
+            f"{expected_count} без разрывов."
+        )
+        return False
+
+    # Всё ок – диапазон непрерывный
+    return True
+
 
 # =====================================================================================
-# =====================================================================================
-# =====================================================================================
-
 def save_10m_volumes(volumes: dict[str, float]):
     global volume_10m_sliding_window
     volume_10m_sliding_window = volumes

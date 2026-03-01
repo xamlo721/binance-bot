@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 
 from datetime import datetime
 from datetime import timezone
@@ -9,67 +10,134 @@ from AnalyticsBot.ramstorage.CandleRecord import CandleRecord
 from AnalyticsBot.ramstorage.HoursRecord import HoursRecord 
 from AnalyticsBot.ramstorage.AlertRecord import AlertRecord 
 
+@dataclass
+class Volume_10m:
+    # Тикер
+    ticker:str
+    # Объёмы 10 минутных свечей
+    volume: float
+    # Время открытия перовой свечи
+    open_time: int
+    # Время открытия 10й свечи
+    close_time:int
+
 # Список всех отметок за MINUTE_CANDLES_LIMIT минут 
-candle_1m_records: list[list[CandleRecord]]= [[] for _ in range(MINUTE_CANDLES_LIMIT)]
-candle_1h_records: list[list[HoursRecord]]= []
-dynamic_1h_records: list[HoursRecord]= []
+#                   <НОМЕР_МИНУТЫ List<МИНУТНАЯ_ЗАПИСЬ>>
+candle_1m_records: dict[int, list[CandleRecord]] = {}
+candle_1h_records: list[list[HoursRecord]] = []
+dynamic_1h_records: list[HoursRecord] = []
 
-alerts_records: list[list[AlertRecord]]= [[] for _ in range(MINUTE_CANDLES_LIMIT)]
-alerts_calc_records: list[list[AlertRecord]]= [[] for _ in range(MINUTE_CANDLES_LIMIT)]
-volume_10m_sliding_window: dict[str, float] = {} 
+alerts_records: list[list[AlertRecord]] = [[] for _ in range(MINUTE_CANDLES_LIMIT)]
+alerts_calc_records: list[list[AlertRecord]] = [[] for _ in range(MINUTE_CANDLES_LIMIT)]
+volume_10m_sliding_window: List[Volume_10m] = []
 
-def is_storage_consistent() -> bool:
+def is_storage_consistent(candle_dict: dict[int, List[CandleRecord]]) -> bool:
     """
-    Проверяет, что все списки ``list[CandleRecord]`` находятся внутри
-    ``candle_1m_records`` последовательно по времени и без разрывов.
+    Проверяет корректность словаря минутных свечей.
 
-    Возвращает ``True`` – если диапазон минутных свечей непрерывный,
-    иначе ``False`` и выводит предупреждение о найденном пропуске.
+    Условия:
+      1. Для каждого CandleRecord поле open_time должно совпадать с ключом (номером минуты),
+         под которым запись хранится.
+      2. Ключи словаря (номера минут) должны образовывать непрерывную
+         возрастающую последовательность без пропусков и повторов.
+
+    Args:
+        candle_dict: словарь вида {номер_минуты: список[CandleRecord]}
+
+    Returns:
+        True, если обе проверки пройдены успешно, иначе False.
     """
-    global candle_1m_records
-
-    # Список всех непустых периодов (минут)
-    periods = [p for p in candle_1m_records if p]
-    if not periods:
-        logger.debug("Нет минутных данных для проверки.")
+    # Пустой словарь считаем корректным (или можно изменить логику при необходимости)
+    if not candle_dict:
         return True
 
-    # Упорядочим их по времени открытия первой свечи
-    periods.sort(key=lambda p: p[0].open_time)
-
-    # Проверяем, что каждая следующая минута ровно 60000 мс позже предыдущей
-    for i in range(len(periods) - 1):
-        diff_ms = periods[i + 1][0].open_time - periods[i][0].open_time
-        if diff_ms != 60000:
-            logger.warning(
-                f"Разрыв между минутами "
-                f"{periods[i][0].open_time} и {periods[i+1][0].open_time}: Δ={diff_ms}мс"
-            )
+    # 1. Проверка непрерывности ключей
+    keys = sorted(candle_dict.keys())
+    for i in range(1, len(keys)):
+        if keys[i] != keys[i-1] + 60000:
+            print(f"Ошибка: разрыв в последовательности минут между {keys[i-1]} и {keys[i]}")
             return False
 
-    # Проверяем, что в диапазоне от первой до последней минуты нет пропусков
-    expected_count = (
-        periods[-1][0].open_time - periods[0][0].open_time
-    ) // 60000 + 1
-    if expected_count != len(periods):
-        logger.warning(
-            f"Найдено {len(periods)} минут, но ожидается "
-            f"{expected_count} без разрывов."
-        )
-        return False
+    # 2. Проверка совпадения open_time с ключом
+    for minute, records in candle_dict.items():
+        for record in records:
+            if record.open_time != minute:
+                print(f"Ошибка: запись {record} имеет open_time={record.open_time}, "
+                      f"не совпадающий с ключом {minute}")
+                return False
 
-    # Всё ок – диапазон непрерывный
     return True
 
+def get_1m_candles() -> dict[int, list[CandleRecord]]:
+    return candle_1m_records
 
-# =====================================================================================
-def save_10m_volumes(volumes: dict[str, float]):
+def save_10m_volumes(volumes: List[Volume_10m]) -> bool:
     global volume_10m_sliding_window
     volume_10m_sliding_window = volumes
+    return True
 
 def save_1h_dynamics(dynamic_records: list[HoursRecord]):
     global dynamic_1h_records
     dynamic_1h_records = dynamic_records
+ 
+def save_klines_to_ram(results: List[CandleRecord]):
+    """
+    Сохраняет свечи в оперативную память с скользящим окном.
+    Ключ словаря – начало минуты (timestamp в ms).
+    При добавлении проверяется:
+        • дублирование минут,
+        • сохранение только последних MINUTE_CANDLES_LIMIT минут,
+        • непрерывность диапазона минут.
+    """
+    if not results:
+        logger.info("Нет данных для сохранения")
+        return
+
+    global candle_1m_records
+
+    # Определяем начало минуты (floor to 60000 мс)
+    minute_start = (results[0].open_time // 60000) * 60000
+
+    # Проверка дублирования
+    if minute_start in candle_1m_records:
+        logger.debug(f"Минута {minute_start} уже существует, пропускаем")
+        return
+
+    # Сортируем свечи по времени открытия
+    sorted_candles = sorted(results, key=lambda x: x.open_time)
+
+    # Добавляем в словарь
+    candle_1m_records[minute_start] = sorted_candles
+
+    # Удаляем старые записи – сохраняем только последние MINUTE_CANDLES_LIMIT минут
+    if len(candle_1m_records) > MINUTE_CANDLES_LIMIT:
+        keys_sorted = sorted(candle_1m_records.keys())
+        for key in keys_sorted[:-MINUTE_CANDLES_LIMIT]:
+            del candle_1m_records[key]
+
+    # Проверяем непрерывность диапазона минут
+    if len(candle_1m_records) > 1:
+        keys_sorted = sorted(candle_1m_records.keys())
+        for i in range(len(keys_sorted)-1):
+            diff_ms = keys_sorted[i+1] - keys_sorted[i]
+            if diff_ms != 60000:
+                logger.warning(
+                    f"Разрыв между минутами {keys_sorted[i]} и "
+                    f"{keys_sorted[i+1]}: Δ={diff_ms}мс"
+                )
+
+    # Логируем результат
+    logger.debug(f"Добавлено {len(sorted_candles)} свечей на ключ {minute_start}")
+
+    # Дополнительные сведения о текущем состоянии памяти
+    non_empty_periods = len(candle_1m_records)
+    logger.debug(f"Непустых периодов: {non_empty_periods}")
+    if non_empty_periods > 0:
+        times = list(candle_1m_records.keys())
+        logger.debug(
+            f"Временной диапазон: от {min(times)} до {max(times)}"
+        )
+
 
 def save_alert_to_memory(ticker, reason):
     """Сохранить алерт в файл с текущей датой по UTC"""
@@ -128,21 +196,31 @@ def save_calc_alert_to_ram(rows: List[AlertRecord]):
     except Exception as e:
         logger.error(f"Ошибка при записи в alerts_calc_records: {e}")
 
-def get_recent_1m_klines(count: int = 60) -> list[list[CandleRecord]]:
-    """Получить свечи за последние N минут"""
+def get_recent_1m_klines(count: int = 60) -> dict[int, list[CandleRecord]]:
+    """
+    Возвращает словарь с минутными свечами за последние N минут.
+    Ключи словаря – номера минут (временные метки), значения – списки CandleRecord.
+    Если записей меньше, чем запрошено, возвращаются все имеющиеся.
+    При пустом словаре или некорректном count возвращается пустой словарь.
+    """
     global candle_1m_records
-    
-    if count > len(candle_1m_records):
-        count = len(candle_1m_records)
-    
-    recent_klines: list[list[CandleRecord]] = []
-    
-    for i in range(count):
-        if candle_1m_records[i]:
-            recent_klines.append(candle_1m_records[i])
-    
-    return recent_klines
 
+    # Защита от пустого словаря или неположительного count
+    if not candle_1m_records or count <= 0:
+        return {}
+
+    # Сортируем ключи (минуты) по возрастанию
+    sorted_minutes = sorted(candle_1m_records.keys())
+
+    # Если запрошено больше, чем есть, берём все
+    if count > len(sorted_minutes):
+        count = len(sorted_minutes)
+
+    # Берём последние count ключей
+    recent_keys = sorted_minutes[-count:]
+
+    # Формируем результирующий словарь
+    return {key: candle_1m_records[key] for key in recent_keys}
 
 def get_recent_1h_klines(count: int = 60) -> list[list[HoursRecord]]:
     """Получить свечи за последние N минут"""
@@ -159,7 +237,6 @@ def get_recent_1h_klines(count: int = 60) -> list[list[HoursRecord]]:
             recent_klines.append(candle_1h_records[i])
     
     return recent_klines
-
 
 def get_recent_alerts(minutes: int = 60) -> list[AlertRecord]:
     """Получить алерты за последние N минут"""
@@ -193,87 +270,4 @@ def clean_old_alerts_from_memory(hours: int = 24):
             alerts_records[i] = [alert for alert in period if alert.time >= cutoff_time]
     
     logger.info(f"Очищены алерты старше {hours} часов")
-
-def save_klines_to_ram(results: List[CandleRecord]):
-    """Сохраняет свечи в оперативную память с скользящим окном в 180 минут"""
-    if not results:
-        logger.info("Нет данных для сохранения")
-        return
-    
-    # Добавляем новые свечи в начало (самая свежая минута)
-    global candle_1m_records
-
-    
-    results_open_time = results[0].open_time
-
-    # Проверяем, существует ли уже запись за это время
-    minute_exists = False
-    existing_index = -1
-    
-    for i, minute_candles in enumerate(candle_1m_records):
-        if minute_candles and minute_candles[0].open_time == results_open_time:
-            minute_exists = True
-            existing_index = i
-            break
-    
-    if minute_exists:
-        logger.debug(f"Минута {results_open_time} уже существует на позиции {existing_index}, пропускаем")
-        return
-    
-    results_sorted = sorted(results, key=lambda x: x.open_time)
-
-    # Находим правильную позицию для вставки на основе времени
-    insert_position = -1
-
-    for i in range(len(candle_1m_records)):
-        if not candle_1m_records[i]:  # Пустой период
-            if insert_position == -1:
-                insert_position = i
-            continue
-        
-        # Получаем время свечей в текущем периоде
-        period_time = candle_1m_records[i][0].open_time
-        
-        if results_open_time > period_time:
-            # Новые свечи новее текущего периода - вставляем перед ним
-            insert_position = i
-            break
-
-        # Если не нашли позицию для вставки, добавляем в конец
-    if insert_position == -1:
-        # Ищем последний непустой индекс
-        last_non_empty = -1
-        for i in range(len(candle_1m_records)):
-            if candle_1m_records[i]:
-                last_non_empty = i
-        
-        if last_non_empty < len(candle_1m_records) - 1:
-            insert_position = last_non_empty + 1
-        else:
-            # Все позиции заняты, нужно сдвинуть и вставить в начало
-            # Сдвигаем все списки на одну позицию вправо
-            for i in range(len(candle_1m_records)-1, 0, -1):
-                candle_1m_records[i] = candle_1m_records[i-1]
-            insert_position = 0
-    
-    # Вставляем на найденную позицию со сдвигом вправо
-    if insert_position < len(candle_1m_records):
-        # Сдвигаем элементы справа от insert_position
-        for i in range(len(candle_1m_records)-1, insert_position, -1):
-            candle_1m_records[i] = candle_1m_records[i-1]
-        
-        # Вставляем новые свечи
-        candle_1m_records[insert_position] = results_sorted
-
-    # Логируем результат
-    logger.debug(f"Добавлено {len(results)} свечей на позицию {insert_position}")
-    
-    # Проверяем, сколько непустых периодов у нас есть
-    non_empty_periods = sum(1 for period in candle_1m_records if period)
-    logger.debug(f"Непустых периодов: {non_empty_periods}")
-    
-    # Логируем временной диапазон для отладки
-    if non_empty_periods > 0:
-        times = [period[0].open_time for period in candle_1m_records if period]
-        logger.debug(f"Временной диапазон: от {min(times)} до {max(times)}")
 

@@ -20,7 +20,7 @@ from typing import Optional
 from typing import Dict
 from typing import List
 
-from AnalyticsBot.downloader import download_current_1m_Candles
+from AnalyticsBot.downloader import download_current_1m_Candles                                               
 from AnalyticsBot.downloader import download_more_candles
 
 from ramstorage.AlertRecord import AlertRecord
@@ -30,6 +30,7 @@ from ramstorage.HoursRecord import HoursRecord
 from ramstorage.ram_storage_utils import get_recent_alerts
 from ramstorage.ram_storage_utils import get_recent_1m_klines
 from ramstorage.ram_storage_utils import get_recent_1h_klines
+from ramstorage.ram_storage_utils import get_1m_candles
 from analytic_utils import calculate_1h_dynamic
 from analytic_utils import update_current_alert
 from analytic_utils import agregate_12h_records
@@ -46,14 +47,31 @@ from ramstorage.ram_storage_utils import is_storage_consistent
 
 from ramstorage.ram_storage_utils import candle_1m_records
 from ramstorage.ram_storage_utils import candle_1h_records
-
+from ramstorage.ram_storage_utils import Volume_10m
 
 def getTrackedTickers() -> list[str]:
-    symbols = get_trading_symbols()
-    if not symbols:
-        return []
-        
-    return symbols
+    # symbols = get_trading_symbols()
+    # if not symbols:
+    #     return []
+                
+    # for s in symbols:
+    #     print(s)
+    # return symbols
+    return [
+        "BTCUSDT", 
+        "ETHUSDT",
+        "BCHUSDT",
+        "XRPUSDT",
+        "LTCUSDT",
+        "TRXUSDT",
+        "ETCUSDT",
+        "XLMUSDT",
+        "ADAUSDT",
+        "XMRUSDT",
+        "ZECUSDT",
+        "XTZUSDT",
+        "BNBUSDT"
+    ]
 
 def doTick():
     """
@@ -64,26 +82,68 @@ def doTick():
     logger.info("    Обновляем список тикеров...")
     # TODO: Необходимо отработать моменты, когда отслеживаемые тикеры закрываются для торговли
     trackable_tickers: list[str] = getTrackedTickers()
-
-    logger.info(f"✅ Скачивание данные свеч за последнюю минуту...")
+    if len(trackable_tickers) == 0:
+        logger.error("❌ Не удалось получить список тикеров")
+        return
+    logger.info(f"✅ Найдено торгующихся тикеров: {len(trackable_tickers)}")
 
     # ======================================================= # 
-    klines_1m_full = asyncio.run(download_more_candles(trackable_tickers, MINUTE_CANDLES_LIMIT, datetime.now()))
-    if klines_1m_full:
-        for candles in klines_1m_full:
-            save_klines_to_ram(candles)
-            open_time_dt = datetime.fromtimestamp(candles[0].open_time / 1000)
-            logger.info(f"Сохранена минута {open_time_dt}." )
-    else:
-        logger.warning("❌ Не удалось загрузить исторические данные")
+
+    recent_klines = get_recent_1m_klines(1)          # последние 1 минута
+    if recent_klines:
+        last_minute = max(recent_klines.keys())
+        last_record_time = recent_klines[last_minute][0].open_time    # timestamp в мс
+        current_ts_ms = int(datetime.now().timestamp() * 1000)
+        diff_ms = current_ts_ms - last_record_time
+
+        if diff_ms > 60000:          # более чем 1 минута разницы
+            missing_minutes = min(diff_ms // 60000, MINUTE_CANDLES_LIMIT)
+            logger.info(f"Найдены {missing_minutes} недостающих минут. Скачиваем...")
+
+            klines_missing: List[List[CandleRecord]] = download_candles_reccursively(trackable_tickers, missing_minutes)
+
+            if klines_missing:
+                for minute_candles in klines_missing:
+                    save_klines_to_ram(minute_candles)
+                    open_time_dt = datetime.fromtimestamp(minute_candles[0].open_time / 1000)
+                    logger.info(f"Сохранена минута {open_time_dt}." )
+            else:
+                logger.warning("❌ Не удалось загрузить недостающие минутные свечи")
+
+    logger.info(f"Запускаю проверку хранилища на консистентность...")
+    storage_klines: dict[int, list[CandleRecord]] = get_1m_candles()
+    if not is_storage_consistent(storage_klines):
+        logger.error("Список candle_1m_records не содержит непрерывный диапазон минутных свечей.")
+        return
+    logger.info(f"✅ Проверка хранилища успешно пройдена.")
+
+    logger.info(f"Обновляю скользящие 10м объёмы...")
+    klines_1m: dict[int, list[CandleRecord]] = get_recent_1m_klines(MINUTE_CANDLES_LIMIT)
+    if (len(klines_1m) < 10):
+        logger.error(f"❌ Найдено только {len(klines_1m)} минутных свечей в хранилище.")
+        logger.error(f"❌ Нужно хотя бы 10. Пропускаем тик.")
+        return
+    
+    volumes_10m: Optional[List[Volume_10m]] = calculate_10m_volumes_sidedWindow(klines_1m)
+    if volumes_10m is None:
+        logger.error(f"❌ Ошибка вычисления 10м объёмов. Пропускаем тик.")
+        return
+
+    # Сохраняем результат
+    if not save_10m_volumes(volumes_10m):
+        logger.error(f"❌ Ошибка сохраненрия 10м объёмов в RAM. Пропускаем тик.")
+
+    logger.info(f"✅ Обновление 10м интервалов объёмов успешно. Получилось {len(volumes_10m)} маркеров")
+
+
+    
+    return
 
     # ======================================================= # 
 
     calculate_1h_records(candle_1m_records, candle_1h_records)
     # ======================================================= # 
 
-    if calculate_10m_volumes_sidedWindow():
-        logger.info(f"✅ Обновление 10м интервалов объёмов успешно.")
 
     # ======================================================= # 
 
@@ -175,11 +235,38 @@ def doTick():
 
     return
 
+def download_candles_reccursively(trackable_tickers: list[str], minutes: int) -> List[List[CandleRecord]]:
+    logger.info(f"✅ Запущено предварительное скачивание архивных данных {minutes} минутных свеч...")
+    download_start_time = time.time()
+    klines_1m_full: List[List[CandleRecord]] = asyncio.run(download_more_candles(trackable_tickers, minutes, datetime.now()))
+    download_stop_time = time.time()
+    logger.info(f"✅ Скачивание завершено.")
+
+    # Если скачивание шло несколько минут, то прошедшие минуты тоже надо докачать
+    duration_minutes: float = (download_stop_time - download_start_time)/60   
+    while int(duration_minutes) > 0:
+        duration_seconds = download_stop_time - download_start_time
+        logger.warning(f"⚠️ Скачивание заняло {duration_seconds:.2f} секунд.")
+        logger.warning(f"⚠️ За это время уже сформировалось {int(duration_minutes) } минутных свечей.")
+        logger.warning( "⚠️ Необходимо запустить скачивание оставшихся свечей.")
+
+        # Запускаем второй этап скачивания
+        logger.info(f"✅ Запущено предварительное скачивание архивных данных {int(duration_minutes)} минутных свеч...")
+        download_start_time = time.time()
+        sub_klines: List[List[CandleRecord]] = asyncio.run(download_more_candles(trackable_tickers, int(duration_minutes), datetime.now()))
+        download_stop_time = time.time()
+        logger.info(f"✅ Скачивание завершено.")
+        klines_1m_full.extend(sub_klines)
+
+        # Пересчитываем количество минут, которые ещё нужно скачать
+        duration_minutes = (download_stop_time - download_start_time) / 60
+    
+    return klines_1m_full
 
 def start():
     try:
         logger.info("Скрипт-стартер запущен.")
-        logger.info(f"    Получаю список актуальных тикеров...")
+        logger.info(f"Получаю список актуальных тикеров...")
 
         # TODO: Необходимо отработать моменты, когда отслеживаемые тикеры закрываются для торговли
         trackable_tickers: list[str] = getTrackedTickers()
@@ -188,32 +275,8 @@ def start():
             return
         logger.info(f"✅ Найдено торгующихся тикеров: {len(trackable_tickers)}")
 
-        logger.info(f"✅ Запущено предварительное скачивание архивных данных {MINUTE_CANDLES_LIMIT} минутных свеч...")
         
-        download_start_time = time.time()
-        klines_1m_full: List[List[CandleRecord]] = asyncio.run(download_more_candles(trackable_tickers, MINUTE_CANDLES_LIMIT, datetime.now()))
-        download_stop_time = time.time()
-        logger.info(f"✅ Скачивание завершено.")
-
-
-        # Если скачивание шло несколько минут, то прошедшие минуты тоже надо докачать
-        duration_minutes: float = (download_stop_time - download_start_time)/60   
-        while int(duration_minutes) > 0:
-            duration_seconds = download_stop_time - download_start_time
-            logger.warning(f"⚠️ Скачивание заняло {duration_seconds:.2f} секунд.")
-            logger.warning(f"⚠️ За это время уже сформировалось {int(duration_minutes) } минутных свечей.")
-            logger.warning( "⚠️ Необходимо запустить скачивание оставшихся свечей.")
-
-            # Запускаем второй этап скачивания
-            logger.info(f"✅ Запущено предварительное скачивание архивных данных {int(duration_minutes)} минутных свеч...")
-            download_start_time = time.time()
-            sub_klines: List[List[CandleRecord]] = asyncio.run(download_more_candles(trackable_tickers, int(duration_minutes), datetime.now()))
-            download_stop_time = time.time()
-            logger.info(f"✅ Скачивание завершено.")
-            klines_1m_full.extend(sub_klines)
-
-            # Пересчитываем количество минут, которые ещё нужно скачать
-            duration_minutes = (download_stop_time - download_start_time) / 60
+        klines_1m_full: List[List[CandleRecord]] = download_candles_reccursively(trackable_tickers, MINUTE_CANDLES_LIMIT)
 
         logger.info(f"✅ Актуальные архивные данные за {len(klines_1m_full)} минут получены.")
 
@@ -227,20 +290,28 @@ def start():
         logger.info(f"Записываю данные в хранилище...")
 
 
+        storage_klines: dict[int, list[CandleRecord]] = get_1m_candles()
         logger.info(f"Запускаю проверку хранилища на консистентность...")
-
-        if not is_storage_consistent():
+        if not is_storage_consistent(storage_klines):
             logger.error("Список candle_1m_records не содержит непрерывный диапазон минутных свечей.")
             return
         logger.info(f"✅ Проверка хранилища успешно пройдена.")
 
-        logger.info(f"    Запускаю основной аналитический цикл анализа...")
+        logger.info(f"Запускаю основной аналитический цикл анализа...")
 
         while True:
-            
+            start_time = time.time()
+
             doTick()
 
-            time.sleep(1)
+            # Вычисляем сколько осталось ждать
+            elapsed = time.time() - start_time
+            wait_time = max(0, 60 - elapsed)  # минимум 0 секунд
+
+            logger.info(f"Function took {elapsed:.2f}s, waiting {wait_time:.2f}s")
+
+            if wait_time > 0:
+                time.sleep(wait_time)
 
     except KeyboardInterrupt:
         logger.warning("Получен сигнал прерывания...")

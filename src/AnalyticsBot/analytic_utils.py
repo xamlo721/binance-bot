@@ -14,30 +14,80 @@ from ramstorage.HoursRecord import HoursRecord
 from ramstorage.AlertRecord import AlertRecord
 
 from ramstorage.ram_storage_utils import save_calc_alert_to_ram
-from ramstorage.ram_storage_utils import get_recent_1m_klines
-from ramstorage.ram_storage_utils import save_10m_volumes
+from ramstorage.ram_storage_utils import Volume_10m
 
 current_alerts: list[AlertRecord] = []
 
+from typing import Dict, List, Optional
 
-def calculate_10m_volumes_sidedWindow() -> bool:
-    # Получаем 10 самых свежих файлов
-    latest_1m_klines = get_recent_1m_klines(10)
-    
-    if len(latest_1m_klines) < 10:
-        logger.warning(f"Найдено только {len(latest_1m_klines)} файлов, нужно 10. Пропускаем.")
-        return False
-    
-    # Рассчитываем объемы
-    volumes: dict[str, float] = {} 
-    for candle_list in latest_1m_klines:
-        for candle in candle_list:
-            volumes[candle.symbol] = volumes.get(candle.symbol, 0) + candle.quote_assets_volume
+# Предполагается, что класс Volume_10m уже определён, например:
+# class Volume_10m:
+#     def __init__(self, ticker: str, volume: float, open_time: int, close_time: int):
+#         self.ticker = ticker
+#         self.volume = volume
+#         self.open_time = open_time
+#         self.close_time = close_time
 
-    # Сохраняем результат
-    save_10m_volumes(volumes)
-    return True
+def calculate_10m_volumes_sidedWindow(
+    candle_dict: Dict[int, List[CandleRecord]]
+) -> Optional[List[Volume_10m]]:
+    """
+    Возвращает список Volume_10m – один объект для каждого тикера,
+    содержащий суммарный объём за последние 10 минут и временные метки начала/конца
+    интервала.
 
+    Параметры:
+        candle_dict: словарь вида {номер_минуты: список[CandleRecord]}
+
+    Возвращает:
+        Список Volume_10m, если в словаре есть минимум 10 минут, и данные согласованы.
+        Иначе None.
+    """
+    # Проверяем наличие достаточного количества минут
+    if len(candle_dict) < 10:
+        return None
+
+    # Сортируем ключи (номера минут) по возрастанию
+    sorted_minutes = sorted(candle_dict.keys())
+
+    # Берём последние 10 минут
+    window_minutes = sorted_minutes[-10:]
+
+    # Собираем списки свечей для каждой минуты окна
+    window_klines = [candle_dict[m] for m in window_minutes]
+
+    # Определяем порядок тикеров по первой минуте окна (предполагаем, что он одинаков для всех)
+    first_minute_candles = window_klines[0]
+    symbols = [c.symbol for c in first_minute_candles]
+    n_symbols = len(symbols)
+
+    # Инициализируем суммарные объёмы
+    volumes = [0.0] * n_symbols
+
+    # Проходим по всем минутам окна и суммируем объёмы
+    for minute_candles in window_klines:
+        # Проверяем, что в текущей минуте столько же свечей, сколько в первой
+        if len(minute_candles) != n_symbols:
+            # Данные несогласованы – возвращаем None
+            return None
+        # Предполагаем, что тикеры идут в том же порядке (можно добавить проверку, если нужно)
+        for i, candle in enumerate(minute_candles):
+            volumes[i] += candle.quote_assets_volume
+
+    # Формируем результат: для каждого тикера берём время начала первой минуты
+    # и время начала последней минуты как close_time
+    open_times = [c.open_time for c in first_minute_candles]
+    close_times = [c.open_time for c in window_klines[-1]]
+
+    return [
+        Volume_10m(
+            ticker=symbols[i],
+            volume=volumes[i],
+            open_time=open_times[i],
+            close_time=close_times[i]
+        )
+        for i in range(n_symbols)
+    ]
 
 def update_current_alert(alerts: List[AlertRecord]):
     global current_alerts

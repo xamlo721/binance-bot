@@ -20,14 +20,6 @@ current_alerts: list[AlertRecord] = []
 
 from typing import Dict, List, Optional
 
-# Предполагается, что класс Volume_10m уже определён, например:
-# class Volume_10m:
-#     def __init__(self, ticker: str, volume: float, open_time: int, close_time: int):
-#         self.ticker = ticker
-#         self.volume = volume
-#         self.open_time = open_time
-#         self.close_time = close_time
-
 def calculate_10m_volumes_sidedWindow(
     candle_dict: Dict[int, List[CandleRecord]]
 ) -> Optional[List[Volume_10m]]:
@@ -120,163 +112,108 @@ def process_new_rows(new_alerts: List[AlertRecord]):
 
     save_calc_alert_to_ram(processed_alerts)
 
-def calculate_1h_records(candle_1m_records: list[list[CandleRecord]], candle_1h_records: list[list[HoursRecord]]) -> bool:
+def calculate_1h_records(candle_1m_records: dict[int, list[CandleRecord]]) -> Optional[dict[int, list[HoursRecord]]]:
+    """
+    Вычисляет часовые агрегаты на основе минутных свечей.
+    Возвращает словарь, где ключ – начало часа (timestamp в миллисекундах), 
+    значение – список HoursRecord для этого часа.
+    
+    Час обрабатывается только если в нём присутствуют все 60 минут для всех символов.
+    Минуты, свыше кратного 60, отбрасываются.
+    """
+    if not candle_1m_records:
+        return None
 
-    # Определяем время начала часа из первой свечи
-    first_candle = candle_1m_records[0][0]
-    hour_start_time = (first_candle.open_time // 3600000) * 3600000
-    
-    # Очищаем предыдущие записи за этот час
-    candle_1h_records = [r for r in candle_1h_records if r.hour_start_time != hour_start_time]
-    
-    # Группируем свечи по символам
-    symbols_data = {}
-    
-    for minute_data in candle_1m_records:  # Каждая минута
-        for candle in minute_data:  # Каждая свеча в минуте
-            if candle.symbol not in symbols_data:
-                symbols_data[candle.symbol] = []
-            symbols_data[candle.symbol].append(candle)
-    
-    # Для каждого символа вычисляем статистику
-    for symbol, candles in symbols_data.items():
-        if len(candles) < 2:  # Нужно хотя бы 2 свечи для std
-            continue
-            
-        # Сортируем по времени
-        candles.sort(key=lambda x: x.open_time)
-        
-        # Цены
-        open_price = candles[0].open
-        close_price = candles[-1].close
-        high_price = max(c.open for c in candles)  # или max(c.high for c in candles)
-        low_price = min(c.low for c in candles)
-        
-        # Для std вычисляем списки значений
-        highs = [c.high for c in candles]
-        lows = [c.low for c in candles]
-        volumes = [c.quote_volume for c in candles]
-        taker_buy_base = [c.taker_buy_base_volume for c in candles]
-        taker_buy_quote = [c.taker_buy_quote_volume for c in candles]
-        trades = [c.trades for c in candles]
-        
-        # Волатильность
-        volatilities = [(c.high - c.low) / c.open for c in candles]
-        
-        # Вычисляем статистику
-        def mean(lst): return sum(lst) / len(lst)
-        def std(lst):
-            m = mean(lst)
-            return (sum((x - m) ** 2 for x in lst) / len(lst)) ** 0.5
-        
-        # Создаем запись
-        hour_record = HoursRecord(
-            symbol=symbol,
-            open=open_price,
-            close=close_price,
-            high=high_price,
-            low=low_price,
-            high_std=std(highs),
-            low_std=std(lows),
-            total_volume=sum(volumes),
-            quote_volume_1m_avg=mean(volumes),
-            quote_volume_std=std(volumes),
-            taker_buy_base_volume_1m_avg=mean(taker_buy_base),
-            taker_buy_base_volume_std=std(taker_buy_base),
-            taker_buy_quote_volume_1m_avg=mean(taker_buy_quote),
-            taker_buy_quote_volume_std=std(taker_buy_quote),
-            trades_1m_avg=mean(trades),
-            trades_std=std(trades),
-            volatility_1m_avg=mean(volatilities),
-            volatility_std=std(volatilities),
-            hour_start_time=hour_start_time,
-            hour_end_time=hour_start_time + 3600000,
-            symbols_count=len(candles)
-        )
-        
-        candle_1h_records.append(hour_record)
-    
-    return True
-
-
-def calculate_1h_dynamic(current_candles: list[list[CandleRecord]]) -> Optional[list[HoursRecord]]:
-
-    if not current_candles or not current_candles[0]:
-        logger.info("Нет данных для обработки hdr_dynamic")
+    # Проверяем, что количество минут кратно 60
+    total_minutes = len(candle_1m_records)
+    if total_minutes < 60:
         return None
     
-    logger.info(f"Обрабатываем {len(current_candles)} минут")
-
-    # Группируем свечи по символам
-    symbols_data: dict[str, list[CandleRecord]] = {}
-  
-    for minute_data in current_candles:
-        for candle in minute_data:
-            if candle.symbol not in symbols_data:
-                symbols_data[candle.symbol] = []
-            symbols_data[candle.symbol].append(candle)
-
-    # Определяем время начала периода (из первой свечи)
-    first_candle = current_candles[0][0]
-    period_start_time = (first_candle.open_time // 60000) * 60000  # округляем до минуты
-
-    # Вспомогательные функции для статистики
-    def mean(lst): return sum(lst) / len(lst) if lst else 0
-    def std(lst):
-        if len(lst) < 2:
-            return 0
-        m = mean(lst)
-        return (sum((x - m) ** 2 for x in lst) / len(lst)) ** 0.5
-
-    # Создаем записи для каждого символа
-    new_records: list[HoursRecord] = []
-    for symbol, candles in symbols_data.items():
-        if len(candles) < 2:  # Нужно хотя бы 2 свечи для std
-            continue
-        
-        # Сортируем по времени
-        candles.sort(key=lambda x: x.open_time)
-        
-        # Собираем значения для статистики
-        highs = [c.high for c in candles]
-        lows = [c.low for c in candles]
-        volumes = [c.quote_assets_volume for c in candles]
-        taker_buy_base = [c.taker_buy_base_volume for c in candles]
-        taker_buy_quote = [c.taker_buy_quote_volume for c in candles]
-        trades = [c.num_of_trades for c in candles]
-        volatilities = [(c.high - c.low) / c.open for c in candles]
-        
-        # Создаем словарь с данными
-        record_dict = {
-            'symbol': symbol,
-            'open': candles[0].open,
-            'close': candles[-1].close,
-            'high': max(highs),
-            'low': min(lows),
-            'high_std': std(highs),
-            'low_std': std(lows),
-            'total_volume': sum(volumes),
-            'quote_volume_1m_avg': mean(volumes),
-            'quote_volume_std': std(volumes),
-            'taker_buy_base_volume_1m_avg': mean(taker_buy_base),
-            'taker_buy_base_volume_std': std(taker_buy_base),
-            'taker_buy_quote_volume_1m_avg': mean(taker_buy_quote),
-            'taker_buy_quote_volume_std': std(taker_buy_quote),
-            'trades_1m_avg': mean(trades),
-            'trades_std': std(trades),
-            'volatility_1m_avg': mean(volatilities),
-            'volatility_std': std(volatilities),
-            'hour_start_time': period_start_time,
-            'hour_end_time': period_start_time + (len(candles) * 60000),  # окончание через N минут
-            'symbols_count': len(candles)
-        }
-        
-        hour_record = HoursRecord.from_dict(record_dict)
-        new_records.append(hour_record)
+    # Отбрасываем минуты, свыше кратного 60
+    # Берём только последние N минут, где N кратно 60
+    minutes_keys = list(candle_1m_records.keys())
+    # Оставляем только количество минут, кратное 60 (отбрасываем "лишние" с начала)
+    valid_minutes_count = (total_minutes // 60) * 60
+    if valid_minutes_count == 0:
+        return None
     
+    # Берём последние valid_minutes_count минут (самые свежие данные)
+    minutes_keys = minutes_keys[-valid_minutes_count:]
     
-    return new_records
+    # Группируем по часам (60 минут в каждом)
+    result_records: dict[int, list[HoursRecord]] = {}
 
+    # Разбиваем на часы по 60 минут
+    for hour_idx in range(0, valid_minutes_count, 60):
+        hour_minutes_keys = minutes_keys[hour_idx:hour_idx + 60]
+        
+        # Получаем список минутных свечей для этого часа
+        hour_candles_by_minute = [candle_1m_records[key] for key in hour_minutes_keys]
+        
+        # Определяем список символов по первой минуте часа
+        # Предполагаем, что во всех минутах одинаковый набор символов в одном порядке
+        first_minute_candles = hour_candles_by_minute[0]
+        symbols = [c.symbol for c in first_minute_candles]
+        n_symbols = len(symbols)
+        
+        # Инициализируем накопители для каждого символа
+        opens = [0.0] * n_symbols
+        closes = [0.0] * n_symbols
+        highs = [float('-inf')] * n_symbols
+        lows = [float('inf')] * n_symbols
+        total_volumes = [0.0] * n_symbols
+        
+        # Устанавливаем цены открытия (с первой минуты часа)
+        for i, candle in enumerate(first_minute_candles):
+            opens[i] = candle.open
+        
+        # Проходим по всем минутам часа и агрегируем данные
+        for minute_idx, minute_candles in enumerate(hour_candles_by_minute):
+            # Проверяем, что количество свечей совпадает
+            if len(minute_candles) != n_symbols:
+                # Если данные несогласованы, пропускаем весь час
+                break
+            
+            for i, candle in enumerate(minute_candles):
+                # Обновляем максимум
+                if candle.high > highs[i]:
+                    highs[i] = candle.high
+                
+                # Обновляем минимум
+                if candle.low < lows[i]:
+                    lows[i] = candle.low
+                
+                # Суммируем объём
+                total_volumes[i] += candle.quote_assets_volume
+                
+                # Цена закрытия обновляется на каждой минуте, но нам нужна последняя
+                if minute_idx == 59:  # последняя минута часа
+                    closes[i] = candle.close
+        else:
+            # Этот блок выполнится, если цикл не был прерван (нет break)
+            # Формируем часовые записи
+            hour_start = hour_minutes_keys[0]  # время начала часа (первая минута)
+            hour_records = []
+            
+            for i in range(n_symbols):
+                # Проверяем, что все значения корректны (high не -inf, low не inf)
+                if highs[i] == float('-inf') or lows[i] == float('inf'):
+                    continue
+                    
+                record = HoursRecord(
+                    symbol=symbols[i],
+                    open=opens[i],
+                    close=closes[i],
+                    high=highs[i],
+                    low=lows[i],
+                    total_volume=total_volumes[i]
+                )
+                hour_records.append(record)
+            
+            if hour_records:  # добавляем только если есть записи
+                result_records[hour_start] = hour_records
+    
+    return result_records if result_records else None
 
 def process_single_records(records: list[HoursRecord]):
     """Обрабатывает список записей и возвращает максимальные high значения"""

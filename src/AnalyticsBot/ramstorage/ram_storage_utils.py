@@ -24,7 +24,7 @@ class Volume_10m:
 # Список всех отметок за MINUTE_CANDLES_LIMIT минут 
 #                   <НОМЕР_МИНУТЫ List<МИНУТНАЯ_ЗАПИСЬ>>
 candle_1m_records: dict[int, list[CandleRecord]] = {}
-candle_1h_records: list[list[HoursRecord]] = []
+candle_1h_records: dict[int, list[HoursRecord]] = {}
 dynamic_1h_records: list[HoursRecord] = []
 
 alerts_records: list[list[AlertRecord]] = [[] for _ in range(MINUTE_CANDLES_LIMIT)]

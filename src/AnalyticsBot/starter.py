@@ -31,7 +31,7 @@ from ramstorage.ram_storage_utils import get_recent_alerts
 from ramstorage.ram_storage_utils import get_recent_1m_klines
 from ramstorage.ram_storage_utils import get_recent_1h_klines
 from ramstorage.ram_storage_utils import get_1m_candles
-from analytic_utils import calculate_1h_dynamic
+
 from analytic_utils import update_current_alert
 from analytic_utils import agregate_12h_records
 from analytic_utils import calculate_1h_records
@@ -109,6 +109,7 @@ def doTick():
                     logger.info(f"Сохранена минута {open_time_dt}." )
             else:
                 logger.warning("❌ Не удалось загрузить недостающие минутные свечи")
+    # ======================================================= # 
 
     logger.info(f"Запускаю проверку хранилища на консистентность...")
     storage_klines: dict[int, list[CandleRecord]] = get_1m_candles()
@@ -136,34 +137,18 @@ def doTick():
     logger.info(f"✅ Обновление 10м интервалов объёмов успешно. Получилось {len(volumes_10m)} маркеров")
 
 
+    # ======================================================= # 
+    logger.info(f"Обновляю скользящую часовую статистику...")
+
+    hours_statistic: Optional[dict[int, list[HoursRecord]]] = calculate_1h_records(storage_klines)
+    if hours_statistic is None:
+        logger.error(f"❌ Ошибка вычисления часовой статистики. Пропускаем тик.")
+        return
     
+    logger.info(f"✅ Обновление часовой статистики успешно. Получилось {len(hours_statistic)} отметок")
+
     return
-
     # ======================================================= # 
-
-    calculate_1h_records(candle_1m_records, candle_1h_records)
-    # ======================================================= # 
-
-
-    # ======================================================= # 
-
-
-    # Количество обрабатываемых файлов равно текущей минуте
-    FILES_TO_WORK = datetime.now().minute
-    # В 00 минут обрабатываем 1 самый новый файл
-    if FILES_TO_WORK == 0:
-        FILES_TO_WORK = 1
-
-    # Получаем последние FILES_TO_WORK минутных свеч
-    current_candles: list[list[CandleRecord]] = get_recent_1m_klines(FILES_TO_WORK)
-
-    # Обновляем новые записи в глобальное хранилище
-    dynamic_candles: Optional[list[HoursRecord]] = calculate_1h_dynamic(current_candles)
-    if dynamic_candles is None:
-        logger.error("Не удалось рассчитать динамические данные")
-        return False  
-    # ======================================================= # 
-
 
     count = AGR_H_COUNT
     MINUTE = datetime.now().minute

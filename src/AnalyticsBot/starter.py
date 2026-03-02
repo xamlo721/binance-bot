@@ -34,10 +34,11 @@ from ramstorage.ram_storage_utils import get_recent_1h_klines
 from ramstorage.ram_storage_utils import get_1m_candles
 
 from analytic_utils import update_current_alert
-from analytic_utils import agregate_12h_records
+from analytic_utils import calculate_10m_volumes_slidedWindow
 from analytic_utils import calculate_1h_records
-from analytic_utils import calculate_10h_volumes_sidedWindow
-from analytic_utils import calculate_10m_volumes_sidedWindow
+from analytic_utils import calculate_volumes_slidedWindow
+from analytic_utils import calculate_prices_slidedWindow
+from analytic_utils import check_price_overlimit
 
 from binance_utils.my_binance_utils import get_trading_symbols
 
@@ -126,7 +127,7 @@ def doTick():
         logger.error(f"❌ Нужно хотя бы 10. Пропускаем тик.")
         return
     
-    volumes_10m: Optional[List[Volume_10m]] = calculate_10m_volumes_sidedWindow(klines_1m)
+    volumes_10m: Optional[List[Volume_10m]] = calculate_10m_volumes_slidedWindow(klines_1m)
     if volumes_10m is None:
         logger.error(f"❌ Ошибка вычисления 10м объёмов. Пропускаем тик.")
         return
@@ -154,16 +155,16 @@ def doTick():
     logger.info(f"✅ Обновление часовой статистики успешно. Получилось {len(hours_statistic)} отметок")
 
     # ======================================================= # 
-    logger.info(f"Обновляю скользящую 10 часовую статистику объёмов...")
+    logger.info(f"Обновляю 10ти часовое скользящее окно объёмов...")
 
     # Получаем самые свежие часовые файлы
     h1_records: dict[int, list[HoursRecord]] = get_recent_1h_klines(10)
 
-    if h1_records is None or len(h1_records) == 0:
+    if h1_records is None or len(h1_records) != 10:
         logger.error("❌ Не найдено часовых файлов для обработки скользящего окна 10ч. Пропускаем тик.")
         return
     
-    volumes_10h: Optional[Dict[str, Dict[str, float]]] = calculate_10h_volumes_sidedWindow(h1_records)
+    volumes_10h: Optional[Dict[str, Dict[str, float]]] = calculate_volumes_slidedWindow(h1_records, 10)
 
     if volumes_10h is None:
         logger.error(f"❌ Ошибка вычисления 10 часовой статистики. Пропускаем тик.")
@@ -171,60 +172,43 @@ def doTick():
 
     logger.info(f"✅ Обновление 10 часовой статистики успешно. Получилось {len(volumes_10h)} отметок")
     # ======================================================= # 
+    logger.info(f"Обновляю 12ти часовое скользящее окно цен...")
 
-    return
-    # symbol,high
-    # 0GUSDT,0.6953999996185303
-    # 2ZUSDT,0.07882999628782272
-    # ACEUSDT,0.1712000072002411
-    max_highs = agregate_12h_records(h1_records)
+    h1_records: dict[int, list[HoursRecord]] = get_recent_1h_klines(12)
 
-    if max_highs is None:
-        logger.error("Обработка 12 часовых файлов прошла с ошибкой")
+    if h1_records is None or len(h1_records) != 12:
+        logger.error("❌ Не найдено часовых файлов для обработки скользящего окна 10ч. Пропускаем тик.")
         return
     
-    # ======================================================= # 
+    max_highs: Optional[Dict[str, float]] = calculate_prices_slidedWindow(h1_records, 12)
 
-    # Агрегация объемов из 10 последних файлов (исключая самый свежий)
-    h10_records: list[list[HoursRecord]] = get_recent_1h_klines(10)
-    vol_10h: Optional[Dict[str, Dict[str, float]]] = calculate_10h_volumes_sidedWindow(dynamic_candles, h10_records)
-
-
-    # ======================================================= # 
-    # "total_volume_24h.py" -  при появлении нового файла в папке "/srv/ftp/Bot_v2/Data/K_lines/Dynamic" 
-    # - берёт этот файл, + 23 часовых файла из папки "/srv/ftp/Bot_v2/Data/K_lines/1H"  
-    # и суммирует объёмы торгов по каждому тикеру
-
-    # В настоящее время данные из этого скрипта не используются в скрипте анализатора
-    # (А задумка была в отсеивании тикеров, которые имеют слишком маленький объём торгов)
-    # Результат сохраняет в папку "/srv/ftp/Bot_v2/Data/Total_volume_24H"
-    # Скрипт автономный и запускается скриптом "starter.py", а далее самостоятельно отслеживает появление новых файлов в папке "/srv/ftp/Bot_v2/Data/K_lines/Dynamic"  и при появлении свежего файла - делает обработку
-
-
-
+    if max_highs is None:
+        logger.error("❌ Обработка 12 часовых файлов прошла с ошибкой. Пропускаем тик.")
+        return
+    
+    logger.info(f"✅ Обновление 12 часовой статистики успешно. Получилось {len(max_highs)} отметок")
     # ======================================================= # 
     # "level_breakout_12h.py" -  скрипт, отслеживающий пробой уровня
     # При появлении нового файла в папке "/srv/ftp/Bot_v2/Data/K_lines/1M" - сравнивает значения максимума цены для каждого тикера с максимумом значения цены в самом свежем файле в папке "/srv/ftp/Bot_v2/Data/Agr_12h"
     # Если по какому либо тикеру цена в самом свежем файле в папке "/srv/ftp/Bot_v2/Data/K_lines/1M"  - выше чем цена по этому тикеру в самом свежем файле в папке "/srv/ftp/Bot_v2/Data/Agr_12h" - создаёт в папке "/srv/ftp/Bot_v2/Data/Ticker_up" - файл со списком этих тикеров
     # если файлов результата становится более чем 2 - удаляет самый старый
     # Скрипт автономный и запускается скриптом "starter.py", а далее самостоятельно отслеживает появление новых файлов в папке "/srv/ftp/Bot_v2/Data/K_lines/1M"  и при появлении свежего файла - делает обработку
-
-    # process_level_breakout_12h()
-
-
     # ======================================================= # 
-    # "ticker_analytics.py" - при появлении нового файла в папке "/srv/ftp/Bot_v2/Data/Ticker_up" - по каждому тикеру из этого файла делает вычисления:
-    # Берёт объём для этого тикера из самого свежего файла в папке "/srv/ftp/Bot_v2/Data/Volume_10M"
-    # домножает его на 6 (мы получаем примерный объём торгов за будующий час, в случае, если такой объём торгов сохранится) (для удобства назову его тут "Z")
-    # Далее сравнивает его с объёмами для этого тикера в самом свежем файле в папке "/srv/ftp/Bot_v2/Data/Volume_10H"
-    # И если "Z" - превышает более чем в 5 раз (!) каждый объём для данного тикера в самом свежем файле в папке "/srv/ftp/Bot_v2/Data/Volume_10H" - то выводим уведомление в телегу и записываем такие тикеры в папку "/srv/ftp/Bot_v2/Data/Alerts"
-    # (Один файл в папке "/srv/ftp/Bot_v2/Data/Alerts" - соответствует одним суткам. При наступлении новых суток по utc - при появлении файла с сигналами - создаётся новый файл алертсов для уже новых суток и постепеноо дополняется до наступления новых суток по utc)
-    # Скрипт автономный и запускается скриптом "starter.py", а далее самостоятельно отслеживает появление новых файлов в папке "/srv/ftp/Bot_v2/Data/Ticker_up"  и при появлении свежего файла - делает обработку
+    logger.info(f"Проверяю превышение объёмов...")
 
+    last_minute_key = max(storage_klines.keys())
+    last_minute_candles = storage_klines[last_minute_key]
+    preAlerts: Optional[Dict[str, float]] = check_price_overlimit(last_minute_candles, max_highs)
+
+    if preAlerts is None:
+        logger.error("✅ Проверка закончена. Не зафиксировано превышений.")
+    else:
+        logger.info(f"✅ Проверка закончена. Зафиксировано {len(preAlerts)} превышений")
+    # ======================================================= # 
 
     # alerts copy
-    alert: list[AlertRecord] = get_recent_alerts(1)
-    update_current_alert(alert)
+    # alert: list[AlertRecord] = get_recent_alerts(1)
+    # update_current_alert(alert)
 
     return
 

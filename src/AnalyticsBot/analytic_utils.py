@@ -20,7 +20,7 @@ current_alerts: list[AlertRecord] = []
 
 from typing import Dict, List, Optional
 
-def calculate_10m_volumes_sidedWindow(candle_dict: Dict[int, List[CandleRecord]]) -> Optional[List[Volume_10m]]:
+def calculate_10m_volumes_slidedWindow(candle_dict: Dict[int, List[CandleRecord]]) -> Optional[List[Volume_10m]]:
     """
     Возвращает список Volume_10m – один объект для каждого тикера,
     содержащий суммарный объём за последние 10 минут и временные метки начала/конца
@@ -182,13 +182,13 @@ def calculate_1h_records(candle_1m_records: dict[int, list[CandleRecord]]) -> Op
     
     return result_records if result_records else None
 
-def calculate_10h_volumes_sidedWindow(all_records: dict[int, List[HoursRecord]]) -> Optional[Dict[str, Dict[str, float]]]:
+def calculate_volumes_slidedWindow(all_records: dict[int, List[HoursRecord]], num_hours: int) -> Optional[Dict[str, Dict[str, float]]]:
     """
     Агрегация объемов из исторических записей
     
     Args:
-        latest_records: Самые свежие записи (текущий час)
-        historical_records: Список списков исторических записей (10 последних часов)
+        all_records: Словарь вида {timestamp_начала_часа: List[HoursRecord]}
+        num_hours: Количество последних часов для агрегации (по умолчанию 10)
     
     Returns:
         Optional[Dict[str, Dict[str, float]]]: Словарь вида
@@ -210,13 +210,13 @@ def calculate_10h_volumes_sidedWindow(all_records: dict[int, List[HoursRecord]])
             return None
         
         # Проверяем, что у нас достаточно данных
-        if len(all_records) < 10:
+        if len(all_records) < num_hours:
             logger.warning(f"Недостаточно данных для обработки. Получено: {len(all_records)} периодов")
             return None
         
-        # Берем последние 10 записей (или все, если меньше)
-        records_to_process = list(all_records.keys())[-10:]
-        
+        # Берем последние num_hours записей (или все, если меньше)
+        records_to_process = list(all_records.keys())[-num_hours:]
+
         logger.info(f"Обработка {len(records_to_process)} периодов для агрегации (с {records_to_process[0]} по {records_to_process[-1]})")
         
         # Словарь для хранения объемов по тикерам
@@ -246,69 +246,87 @@ def calculate_10h_volumes_sidedWindow(all_records: dict[int, List[HoursRecord]])
         logger.error(f"Ошибка при агрегации объемов: {e}")
         return None
 
-def process_single_records(records: list[HoursRecord]):
-    """Обрабатывает список записей и возвращает максимальные high значения"""
-    try:
-        max_highs: Dict[str, float] = {}
-        
-        for record in records:
-            symbol = record.symbol
-            high = record.high
-            
-            if symbol not in max_highs or high > max_highs[symbol]:
-                max_highs[symbol] = high
-        
-        logger.debug(f"Обработано {len(records)} записей, найдено {len(max_highs)} символов")
-        return max_highs
-        
-    except Exception as e:
-        logger.error(f"Ошибка при обработке записей: {e}")
-        return {}
-    
-def agregate_12h_records(hours_records: list[list[HoursRecord]]) -> Optional[Dict[str, float]]:
+def calculate_prices_slidedWindow(hours_records: dict[int, list[HoursRecord]], num_hours: int) -> Optional[Dict[str, float]]:
     """
-    Обрабатывает динамический файл и агрегирует данные
-    
+    Обрабатывает словарь часовых записей и возвращает максимальные значения high по каждому тикеру.
+    Берёт первые num_hours записей из словаря (по возрастанию ключей – самые старые часы).
+
     Args:
-        hours_records: Список списков HoursRecord (11 часовых записей + динамическая запись)
-    
+        hours_records: Словарь вида {timestamp_начала_часа: list[HoursRecord]}
+        num_hours: Количество первых часов для обработки (по умолчанию 12)
+
     Returns:
-        Optional[Dict[str, float]]: Словарь {symbol: max_high} с максимальными значениями, или None в случае ошибки
+        Optional[Dict[str, float]]: Словарь {symbol: max_high} с максимальными значениями,
+        или None в случае ошибки. При отсутствии данных возвращается пустой словарь.
     """
     try:
-        # Обрабатываем файлы параллельно
+        if not hours_records:
+            logger.info("Пустой словарь часовых записей")
+            return {}
+
         max_high_values: Dict[str, float] = {}
-        
-        # Создаем пул процессов
-        with ProcessPoolExecutor(max_workers=min(len(hours_records), os.cpu_count() or 4)) as executor:
-            # Запускаем обработку всех записей
-            future_to_records = {
-                executor.submit(process_single_records, records): i 
-                for i, records in enumerate(hours_records)
-            }
-            
-            # Собираем результаты по мере завершения
-            for future in as_completed(future_to_records):
-                try:
-                    result = future.result(timeout=30)
-                    if result:
-                        # Объединяем результаты
-                        for symbol, high in result.items():
-                            if symbol not in max_high_values or high > max_high_values[symbol]:
-                                max_high_values[symbol] = high
-                except Exception as e:
-                    logger.error(f"Ошибка при обработке записи: {e}")
-        
+
+        # Проходим по всем часам (ключи словаря)
+        for hour_timestamp, records in hours_records.items():
+            # records — список HoursRecord для данного часа
+            for record in records:
+                symbol = record.symbol
+                high = record.high
+                # Обновляем максимум для символа
+                if symbol not in max_high_values or high > max_high_values[symbol]:
+                    max_high_values[symbol] = high
+
         if max_high_values:
             logger.info(f"Обработано тикеров: {len(max_high_values)}")
             return max_high_values
         else:
             logger.info("Нет данных для обработки")
             return {}
+
+    except Exception as e:
+        logger.error(f"Ошибка при обработке часовых записей: {e}")
+        return None
+
+def check_price_overlimit(k_line_records: List[CandleRecord], aggregated_highs: Dict[str, float]) -> Optional[Dict[str, float]]:
+    """
+    Сравнивает цены закрытия минутных свечей с максимальными значениями high из агрегированных данных
+    
+    Args:
+        k_line_records: Список минутных свечей (CandleRecord)
+        aggregated_highs: Словарь {symbol: max_high} с максимальными значениями high из агрегации
+    
+    Returns:
+        Optional[Dict[str, float]]: Словарь {symbol: difference} для тикеров, где close > high или None при ошибке
+    """
+    try:
+        # Группируем последние значения close по символам
+        latest_closes: Dict[str, float] = {}
+        
+        for candle in k_line_records:
+            symbol = candle.symbol
+            close = candle.close
+            
+            # Берем самую свежую цену закрытия для каждого символа
+            if symbol not in latest_closes:
+                latest_closes[symbol] = close
+        
+        # Находим тикеры где close > high
+        tickers_up: Dict[str, float] = {}
+        
+        for symbol, close in latest_closes.items():
+            if symbol in aggregated_highs:
+                high = aggregated_highs[symbol]
+                if close > high:
+                    difference = close - high
+                    tickers_up[symbol] = difference
+        
+        return tickers_up
         
     except Exception as e:
-        logger.error(f"Ошибка при обработке agregate_12h_records : {e}")
+        logger.error(f"Ошибка при обработке данных: {e}")
         return None
+
+
 
 def update_current_alert(alerts: List[AlertRecord]):
     global current_alerts

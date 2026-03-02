@@ -76,10 +76,12 @@ def save_10m_volumes(volumes: List[Volume_10m]) -> bool:
     volume_10m_sliding_window = volumes
     return True
 
-def save_1h_dynamics(dynamic_records: list[HoursRecord]):
-    global dynamic_1h_records
-    dynamic_1h_records = dynamic_records
- 
+def save_1h_records(volumes:  dict[int, list[HoursRecord]]) -> bool:
+    global candle_1h_records
+    candle_1h_records = volumes
+    return True
+
+
 def save_klines_to_ram(results: List[CandleRecord]):
     """
     Сохраняет свечи в оперативную память с скользящим окном.
@@ -208,35 +210,33 @@ def get_recent_1m_klines(count: int = 60) -> dict[int, list[CandleRecord]]:
     # Защита от пустого словаря или неположительного count
     if not candle_1m_records or count <= 0:
         return {}
-
-    # Сортируем ключи (минуты) по возрастанию
-    sorted_minutes = sorted(candle_1m_records.keys())
-
+    
     # Если запрошено больше, чем есть, берём все
-    if count > len(sorted_minutes):
-        count = len(sorted_minutes)
+    if count > len(candle_1m_records):
+        count = len(candle_1m_records)
 
     # Берём последние count ключей
-    recent_keys = sorted_minutes[-count:]
+    recent_keys = list(candle_1m_records.keys())[-count:]
 
     # Формируем результирующий словарь
     return {key: candle_1m_records[key] for key in recent_keys}
 
-def get_recent_1h_klines(count: int = 60) -> list[list[HoursRecord]]:
+def get_recent_1h_klines(count: int = 60) -> dict[int, list[HoursRecord]]:
     """Получить свечи за последние N минут"""
     global candle_1h_records
+    
+    # Защита от пустого словаря или неположительного count
+    if not candle_1h_records or count <= 0:
+        return {}
     
     if count > len(candle_1h_records):
         count = len(candle_1h_records)
     
-    # Создаем список для результатов
-    recent_klines: list[list[HoursRecord]] = []
-    
-    for i in range(count):
-        if candle_1h_records[i]:
-            recent_klines.append(candle_1h_records[i])
-    
-    return recent_klines
+    # Берём последние count ключей
+    recent_keys = list(candle_1h_records.keys())[-count:]
+
+    # Формируем результирующий словарь
+    return {key: candle_1h_records[key] for key in recent_keys}
 
 def get_recent_alerts(minutes: int = 60) -> list[AlertRecord]:
     """Получить алерты за последние N минут"""

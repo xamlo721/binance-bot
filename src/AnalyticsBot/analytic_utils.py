@@ -20,9 +20,7 @@ current_alerts: list[AlertRecord] = []
 
 from typing import Dict, List, Optional
 
-def calculate_10m_volumes_sidedWindow(
-    candle_dict: Dict[int, List[CandleRecord]]
-) -> Optional[List[Volume_10m]]:
+def calculate_10m_volumes_sidedWindow(candle_dict: Dict[int, List[CandleRecord]]) -> Optional[List[Volume_10m]]:
     """
     Возвращает список Volume_10m – один объект для каждого тикера,
     содержащий суммарный объём за последние 10 минут и временные метки начала/конца
@@ -80,37 +78,6 @@ def calculate_10m_volumes_sidedWindow(
         )
         for i in range(n_symbols)
     ]
-
-def update_current_alert(alerts: List[AlertRecord]):
-    global current_alerts
-    """Найти самый свежий файл в папке"""
-    try:
-        if alerts != current_alerts:
-            logger.info(f"Обнаружен новый набор алертов!: {alerts[0].time}")
-            current_alerts = alerts
-            logger.info(f"Загружено {len(alerts)} строк из файла")
-
-            process_new_rows(alerts)
-
-    except Exception as e:
-        logger.error(f"Ошибка при обновлении текущего файла: {e}")
-
-def process_new_rows(new_alerts: List[AlertRecord]):
-    """Обработать новые строки"""
-    processed_alerts: List[AlertRecord] = []
-    
-    # Анализируем каждую новую строку
-    for alert in new_alerts:
-
-        # Проверяем, есть ли значения цен
-        if alert.buy_short_price and alert.min_price and alert.max_price:
-            logger.info(f"Найдены цены для {alert.ticker}")
-            processed_alerts.append(alert)
-        else:
-            # TODO: А как они могут быть не заполнены? 
-            logger.warning(f"Цены не заполнены для {alert.ticker}, пропускаем")
-
-    save_calc_alert_to_ram(processed_alerts)
 
 def calculate_1h_records(candle_1m_records: dict[int, list[CandleRecord]]) -> Optional[dict[int, list[HoursRecord]]]:
     """
@@ -215,6 +182,70 @@ def calculate_1h_records(candle_1m_records: dict[int, list[CandleRecord]]) -> Op
     
     return result_records if result_records else None
 
+def calculate_10h_volumes_sidedWindow(all_records: dict[int, List[HoursRecord]]) -> Optional[Dict[str, Dict[str, float]]]:
+    """
+    Агрегация объемов из исторических записей
+    
+    Args:
+        latest_records: Самые свежие записи (текущий час)
+        historical_records: Список списков исторических записей (10 последних часов)
+    
+    Returns:
+        Optional[Dict[str, Dict[str, float]]]: Словарь вида
+            {
+                'BTCUSDT': {
+                    'total_volume_1': 12345.67,  # самый старый час
+                    'total_volume_2': 12345.67,
+                    ...
+                    'total_volume_10': 12345.67,  # самый новый час (latest_records)
+                },
+                ...
+            }
+            или None при ошибке
+    """
+    try:
+        # Проверяем наличие данных
+        if not all_records:
+            logger.warning("Получен пустой словарь записей")
+            return None
+        
+        # Проверяем, что у нас достаточно данных
+        if len(all_records) < 10:
+            logger.warning(f"Недостаточно данных для обработки. Получено: {len(all_records)} периодов")
+            return None
+        
+        # Берем последние 10 записей (или все, если меньше)
+        records_to_process = list(all_records.keys())[-10:]
+        
+        logger.info(f"Обработка {len(records_to_process)} периодов для агрегации (с {records_to_process[0]} по {records_to_process[-1]})")
+        
+        # Словарь для хранения объемов по тикерам
+        volumes_by_symbol: Dict[str, Dict[str, float]] = {}
+        
+        # Обрабатываем каждый период
+        for period_idx, hour_timestamp in enumerate(records_to_process, 1):
+            hour_records = all_records[hour_timestamp]
+
+            for record in hour_records:
+                symbol = record.symbol
+                total_volume = record.total_volume
+                
+                if symbol not in volumes_by_symbol:
+                    volumes_by_symbol[symbol] = {}
+                
+                # Сохраняем объем для текущего периода
+                # period_idx=1 - самый старый час в окне, period_idx=10 - самый новый
+                volumes_by_symbol[symbol][f'total_volume_{period_idx}'] = total_volume
+        
+        # Логируем результат
+        logger.info(f"Агрегировано {len(volumes_by_symbol)} тикеров за {len(records_to_process)} периодов")
+        
+        return volumes_by_symbol
+        
+    except Exception as e:
+        logger.error(f"Ошибка при агрегации объемов: {e}")
+        return None
+
 def process_single_records(records: list[HoursRecord]):
     """Обрабатывает список записей и возвращает максимальные high значения"""
     try:
@@ -279,63 +310,33 @@ def agregate_12h_records(hours_records: list[list[HoursRecord]]) -> Optional[Dic
         logger.error(f"Ошибка при обработке agregate_12h_records : {e}")
         return None
 
-
-def aggregate_10h_volumes(latest_records: List[HoursRecord], historical_records: List[List[HoursRecord]]) -> Optional[Dict[str, Dict[str, float]]]:
-    """
-    Агрегация объемов из исторических записей
-    
-    Args:
-        latest_records: Самые свежие записи (текущий час)
-        historical_records: Список списков исторических записей (10 последних часов)
-    
-    Returns:
-        Optional[Dict[str, Dict[str, float]]]: Словарь вида
-            {
-                'BTCUSDT': {
-                    'total_volume_1': 12345.67,  # самый старый час
-                    'total_volume_2': 12345.67,
-                    ...
-                    'total_volume_10': 12345.67,  # самый новый час (latest_records)
-                    'total_volume_11': 12345.67   # дополнительный, если есть
-                },
-                ...
-            }
-            или None при ошибке
-    """
+def update_current_alert(alerts: List[AlertRecord]):
+    global current_alerts
+    """Найти самый свежий файл в папке"""
     try:
-        # Объединяем все записи в один список, добавляя latest_records в конец
-        all_records = historical_records + [latest_records]
-        
-        # Проверяем, что у нас достаточно данных
-        if len(all_records) < 2:
-            logger.warning(f"Недостаточно данных для обработки. Получено: {len(all_records)} периодов")
-            return None
-        
-        # Берем последние 10 записей (или все, если меньше)
-        records_to_process = all_records[-10:] if len(all_records) >= 10 else all_records
-        
-        logger.info(f"Обработка {len(records_to_process)} периодов для агрегации")
-        
-        # Словарь для хранения объемов по тикерам
-        volumes_by_symbol: Dict[str, Dict[str, float]] = {}
-        
-        # Обрабатываем каждый период
-        for period_idx, period_records in enumerate(records_to_process, 1):
-            for record in period_records:
-                symbol = record.symbol
-                total_volume = record.total_volume
-                
-                if symbol not in volumes_by_symbol:
-                    volumes_by_symbol[symbol] = {}
-                
-                # Сохраняем объем для текущего периода
-                volumes_by_symbol[symbol][f'total_volume_{period_idx}'] = total_volume
-        
-        # Логируем результат
-        logger.info(f"Агрегировано {len(volumes_by_symbol)} тикеров за {len(records_to_process)} периодов")
-        
-        return volumes_by_symbol
-        
+        if alerts != current_alerts:
+            logger.info(f"Обнаружен новый набор алертов!: {alerts[0].time}")    
+            current_alerts = alerts
+            logger.info(f"Загружено {len(alerts)} строк из файла")
+
+            process_new_rows(alerts)
+
     except Exception as e:
-        logger.error(f"Ошибка при агрегации объемов: {e}")
-        return None
+        logger.error(f"Ошибка при обновлении текущего файла: {e}")
+
+def process_new_rows(new_alerts: List[AlertRecord]):
+    """Обработать новые строки"""
+    processed_alerts: List[AlertRecord] = []
+    
+    # Анализируем каждую новую строку
+    for alert in new_alerts:
+
+        # Проверяем, есть ли значения цен
+        if alert.buy_short_price and alert.min_price and alert.max_price:
+            logger.info(f"Найдены цены для {alert.ticker}")
+            processed_alerts.append(alert)
+        else:
+            # TODO: А как они могут быть не заполнены? 
+            logger.warning(f"Цены не заполнены для {alert.ticker}, пропускаем")
+
+    save_calc_alert_to_ram(processed_alerts)

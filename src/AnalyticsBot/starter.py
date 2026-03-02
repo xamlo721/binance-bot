@@ -26,6 +26,7 @@ from AnalyticsBot.downloader import download_more_candles
 from ramstorage.AlertRecord import AlertRecord
 from ramstorage.CandleRecord import CandleRecord
 from ramstorage.HoursRecord import HoursRecord
+from ramstorage.ram_storage_utils import Volume_10m
 
 from ramstorage.ram_storage_utils import get_recent_alerts
 from ramstorage.ram_storage_utils import get_recent_1m_klines
@@ -35,19 +36,17 @@ from ramstorage.ram_storage_utils import get_1m_candles
 from analytic_utils import update_current_alert
 from analytic_utils import agregate_12h_records
 from analytic_utils import calculate_1h_records
-from analytic_utils import aggregate_10h_volumes
+from analytic_utils import calculate_10h_volumes_sidedWindow
 from analytic_utils import calculate_10m_volumes_sidedWindow
 
 from binance_utils.my_binance_utils import get_trading_symbols
 
 from ramstorage.ram_storage_utils import get_recent_1m_klines
+from ramstorage.ram_storage_utils import save_1h_records
 from ramstorage.ram_storage_utils import save_10m_volumes
 from ramstorage.ram_storage_utils import save_klines_to_ram
 from ramstorage.ram_storage_utils import is_storage_consistent
 
-from ramstorage.ram_storage_utils import candle_1m_records
-from ramstorage.ram_storage_utils import candle_1h_records
-from ramstorage.ram_storage_utils import Volume_10m
 
 def getTrackedTickers() -> list[str]:
     # symbols = get_trading_symbols()
@@ -106,7 +105,7 @@ def doTick():
                 for minute_candles in klines_missing:
                     save_klines_to_ram(minute_candles)
                     open_time_dt = datetime.fromtimestamp(minute_candles[0].open_time / 1000)
-                    logger.info(f"Сохранена минута {open_time_dt}." )
+                    logger.debug(f"Сохранена минута {open_time_dt}." )
             else:
                 logger.warning("❌ Не удалось загрузить недостающие минутные свечи")
     # ======================================================= # 
@@ -116,7 +115,9 @@ def doTick():
     if not is_storage_consistent(storage_klines):
         logger.error("Список candle_1m_records не содержит непрерывный диапазон минутных свечей.")
         return
+    
     logger.info(f"✅ Проверка хранилища успешно пройдена.")
+    # ======================================================= # 
 
     logger.info(f"Обновляю скользящие 10м объёмы...")
     klines_1m: dict[int, list[CandleRecord]] = get_recent_1m_klines(MINUTE_CANDLES_LIMIT)
@@ -132,7 +133,8 @@ def doTick():
 
     # Сохраняем результат
     if not save_10m_volumes(volumes_10m):
-        logger.error(f"❌ Ошибка сохраненрия 10м объёмов в RAM. Пропускаем тик.")
+        logger.error(f"❌ Ошибка сохранении 10м объёмов в RAM. Пропускаем тик.")
+        return
 
     logger.info(f"✅ Обновление 10м интервалов объёмов успешно. Получилось {len(volumes_10m)} маркеров")
 
@@ -145,26 +147,32 @@ def doTick():
         logger.error(f"❌ Ошибка вычисления часовой статистики. Пропускаем тик.")
         return
     
+    if not save_1h_records(hours_statistic):
+        logger.error(f"❌ Ошибка сохранении часовой статистики в RAM. Пропускаем тик.")
+        return
+
     logger.info(f"✅ Обновление часовой статистики успешно. Получилось {len(hours_statistic)} отметок")
 
-    return
     # ======================================================= # 
-
-    count = AGR_H_COUNT
-    MINUTE = datetime.now().minute
-    if MINUTE == 0:
-        count += 1
+    logger.info(f"Обновляю скользящую 10 часовую статистику объёмов...")
 
     # Получаем самые свежие часовые файлы
-    h1_records: list[list[HoursRecord]] = get_recent_1h_klines(count)
+    h1_records: dict[int, list[HoursRecord]] = get_recent_1h_klines(10)
 
-    if not h1_records:
-        logger.error("Не найдено часовых файлов для обработки")
+    if h1_records is None or len(h1_records) == 0:
+        logger.error("❌ Не найдено часовых файлов для обработки скользящего окна 10ч. Пропускаем тик.")
         return
     
-    if count == 11:
-        h1_records.append(dynamic_candles)
+    volumes_10h: Optional[Dict[str, Dict[str, float]]] = calculate_10h_volumes_sidedWindow(h1_records)
 
+    if volumes_10h is None:
+        logger.error(f"❌ Ошибка вычисления 10 часовой статистики. Пропускаем тик.")
+        return
+
+    logger.info(f"✅ Обновление 10 часовой статистики успешно. Получилось {len(volumes_10h)} отметок")
+    # ======================================================= # 
+
+    return
     # symbol,high
     # 0GUSDT,0.6953999996185303
     # 2ZUSDT,0.07882999628782272
@@ -179,7 +187,7 @@ def doTick():
 
     # Агрегация объемов из 10 последних файлов (исключая самый свежий)
     h10_records: list[list[HoursRecord]] = get_recent_1h_klines(10)
-    vol_10h: Optional[Dict[str, Dict[str, float]]] = aggregate_10h_volumes(dynamic_candles, h10_records)
+    vol_10h: Optional[Dict[str, Dict[str, float]]] = calculate_10h_volumes_sidedWindow(dynamic_candles, h10_records)
 
 
     # ======================================================= # 
@@ -269,7 +277,7 @@ def start():
             for candles in klines_1m_full:
                 save_klines_to_ram(candles)
                 open_time_dt = datetime.fromtimestamp(candles[0].open_time / 1000)
-                logger.info(f"Сохранена минута {open_time_dt}." )
+                logger.debug(f"Сохранена минута {open_time_dt}." )
         else:
             logger.warning("❌ Не удалось загрузить исторические данные")
         logger.info(f"Записываю данные в хранилище...")

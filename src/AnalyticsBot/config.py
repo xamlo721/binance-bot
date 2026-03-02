@@ -1,7 +1,7 @@
 import os
 
 # Max файлов в папке
-MINUTE_CANDLES_LIMIT = 284
+MINUTE_CANDLES_LIMIT = 963
 # Max файлов в папке
 HOURS_CANDLE_FILE_LIMIT = 60
 

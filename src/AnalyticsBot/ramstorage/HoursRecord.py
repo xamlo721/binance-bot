@@ -17,29 +17,6 @@ class HoursRecord:
     # Объемы
     total_volume: float               # Общий объем базового актива за час
 
-    def to_dict(self) -> dict:
-        """Преобразует объект в словарь для CSV"""
-        return {
-            'symbol': self.symbol,
-            'open': self.open,
-            'close': self.close,
-            'high': self.high,
-            'low': self.low,
-            'total_volume': self.total_volume
-        }
-    
-    @classmethod
-    def from_dict(cls, data: dict) -> 'HoursRecord':
-        """Создает объект из словаря (для загрузки из CSV)"""
-        return cls(
-            symbol=data['symbol'],
-            open=float(data['open']),
-            close=float(data['close']),
-            high=float(data['high']),
-            low=float(data['low']),
-            total_volume=float(data['total_volume']),
-        )
-    
     def __str__(self) -> str:
         """Краткое строковое представление"""
         return (f"HoursRecord(symbol={self.symbol}, "

@@ -3,6 +3,7 @@ import os
 from typing import Optional
 from typing import Dict
 from typing import List
+from datetime import datetime
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -20,7 +21,7 @@ current_alerts: list[AlertRecord] = []
 
 from typing import Dict, List, Optional
 
-def calculate_10m_volumes_slidedWindow(candle_dict: Dict[int, List[CandleRecord]]) -> Optional[List[Volume_10m]]:
+def calculate_10m_volumes_slidedWindow(candle_dict: dict[int, List[CandleRecord]]) -> Optional[List[Volume_10m]]:
     """
     Возвращает список Volume_10m – один объект для каждого тикера,
     содержащий суммарный объём за последние 10 минут и временные метки начала/конца
@@ -182,7 +183,7 @@ def calculate_1h_records(candle_1m_records: dict[int, list[CandleRecord]]) -> Op
     
     return result_records if result_records else None
 
-def calculate_volumes_slidedWindow(all_records: dict[int, List[HoursRecord]], num_hours: int) -> Optional[Dict[str, Dict[str, float]]]:
+def calculate_volumes_slidedWindow(all_records: dict[int, List[HoursRecord]], num_hours: int) -> Optional[dict[str, dict[str, float]]]:
     """
     Агрегация объемов из исторических записей
     
@@ -217,8 +218,12 @@ def calculate_volumes_slidedWindow(all_records: dict[int, List[HoursRecord]], nu
         # Берем последние num_hours записей (или все, если меньше)
         records_to_process = list(all_records.keys())[-num_hours:]
 
-        logger.info(f"Обработка {len(records_to_process)} периодов для агрегации (с {records_to_process[0]} по {records_to_process[-1]})")
-        
+        def _format_ts(ts_ms: int) -> str:
+            """Преобразует timestamp в миллисекундах в строку ГГГГ-ММ-ДД ЧЧ:ММ:СС"""
+            return datetime.fromtimestamp(ts_ms / 1000).strftime('%Y-%m-%d %H:%M:%S')
+
+        logger.info(f"Обработка {len(records_to_process)} периодов для агрегации (с {_format_ts(records_to_process[0])} по {_format_ts(records_to_process[-1])})")        
+
         # Словарь для хранения объемов по тикерам
         volumes_by_symbol: Dict[str, Dict[str, float]] = {}
         
@@ -246,7 +251,7 @@ def calculate_volumes_slidedWindow(all_records: dict[int, List[HoursRecord]], nu
         logger.error(f"Ошибка при агрегации объемов: {e}")
         return None
 
-def calculate_prices_slidedWindow(hours_records: dict[int, list[HoursRecord]], num_hours: int) -> Optional[Dict[str, float]]:
+def calculate_prices_slidedWindow(hours_records: dict[int, list[HoursRecord]], num_hours: int) -> Optional[dict[str, float]]:
     """
     Обрабатывает словарь часовых записей и возвращает максимальные значения high по каждому тикеру.
     Берёт первые num_hours записей из словаря (по возрастанию ключей – самые старые часы).
@@ -287,12 +292,12 @@ def calculate_prices_slidedWindow(hours_records: dict[int, list[HoursRecord]], n
         logger.error(f"Ошибка при обработке часовых записей: {e}")
         return None
 
-def check_price_overlimit(k_line_records: List[CandleRecord], aggregated_highs: Dict[str, float]) -> Optional[Dict[str, float]]:
+def check_price_overlimit(klines: List[CandleRecord], aggregated_highs: dict[str, float]) -> Optional[dict[str, float]]:
     """
     Сравнивает цены закрытия минутных свечей с максимальными значениями high из агрегированных данных
     
     Args:
-        k_line_records: Список минутных свечей (CandleRecord)
+        klines: Список минутных свечей (CandleRecord)
         aggregated_highs: Словарь {symbol: max_high} с максимальными значениями high из агрегации
     
     Returns:
@@ -302,7 +307,7 @@ def check_price_overlimit(k_line_records: List[CandleRecord], aggregated_highs: 
         # Группируем последние значения close по символам
         latest_closes: Dict[str, float] = {}
         
-        for candle in k_line_records:
+        for candle in klines:
             symbol = candle.symbol
             close = candle.close
             
@@ -324,6 +329,104 @@ def check_price_overlimit(k_line_records: List[CandleRecord], aggregated_highs: 
         
     except Exception as e:
         logger.error(f"Ошибка при обработке данных: {e}")
+        return None
+
+
+
+
+# Пороговое значение (X раз)
+VOLUME_MULTIPLIER = 5.0
+
+def analyze_ticker(ticker: str, volume_10m: Optional[float], volume_10h_list: List[float]) -> bool:
+    """
+    Анализирует один тикер по условиям:
+    volume_10m * 6 должно превышать каждый элемент volume_10h_list в X_MULTIPLIER раз.
+
+    Args:
+        ticker: Символ тикера
+        volume_10m: Значение volume_10m для тикера (может быть None)
+        volume_10h_list: Список из 10 значений total_volume для тикера из разных часов
+
+    Returns:
+        bool True/False
+    """
+    if volume_10m is None:
+        logger.error(f"❌ Нет данных volume_10m")
+        return False
+
+    # Умножаем volume_10m на 6
+    multiplied_volume = volume_10m * 6
+
+    if not volume_10h_list or len(volume_10h_list) < 10:
+        logger.error(f"❌ Недостаточно данных volume_10h")
+        return False
+
+    # Проверяем условие для каждого часа
+    min_ratio = float('inf')
+    for idx, vol_10h in enumerate(volume_10h_list, 1):
+        if vol_10h <= 0:
+            logger.error(f"❌ total_volume_{idx} <= 0 ({vol_10h})")
+            return False
+
+        ratio = multiplied_volume / vol_10h
+        min_ratio = min(min_ratio, ratio)
+
+        if ratio < VOLUME_MULTIPLIER:
+            logger.error(f"❌ Условие не выполнено (коэффициент {ratio:.2f} для total_volume_{idx})")
+            return False
+
+    # Все условия выполнены
+    return True
+
+def check_volume_overlimit(klines: List[CandleRecord], volumes_10m: List[Volume_10m], volumes_10h: Dict[str, Dict[str, float]]) -> Optional[dict[str, float]]:
+    """
+    Проверяет превышение лимитов объёма для тикеров из последней минуты.
+
+    Args:
+        klines: Список свечей за последнюю минуту (каждая свеча соответствует одному тикеру).
+        volumes_10m: Список объектов Volume_10m с суммарным объёмом за последние 10 минут.
+        volumes_10h: Словарь, где ключ — тикер, значение — словарь с объёмами за последние 10 часов
+                        вида {"total_volume_1": val1, ..., "total_volume_10": val10}.
+
+    Returns:
+        Словарь {тикер: объём_за_10_минут} для тикеров, по которым сработало условие,
+        или None в случае ошибки.
+    """
+    try:
+        # Преобразуем volumes_10m в словарь для быстрого доступа по тикеру
+        volumes_10m_dict = {item.ticker: item.volume for item in volumes_10m}
+
+        results = {}
+
+        for candle in klines:
+            ticker = candle.symbol
+
+            # Получаем 10-минутный объём для тикера
+            vol_10m = volumes_10m_dict.get(ticker)
+            if vol_10m is None:
+                logger.debug(f"Тикер {ticker} отсутствует в volumes_10m, пропускаем")
+                continue
+
+            # Получаем список объёмов за последние 10 часов
+            hour_volumes_dict = volumes_10h.get(ticker)
+            if hour_volumes_dict is None:
+                logger.debug(f"Тикер {ticker} отсутствует в volumes_10h, пропускаем")
+                continue
+
+            # Преобразуем словарь в список в порядке возрастания периода (от total_volume_1 до total_volume_10)
+            # Предполагаем, что ключи именуются как 'total_volume_1'...'total_volume_10'
+            hour_volumes = [hour_volumes_dict[f'total_volume_{i}'] for i in range(1, 11)]
+
+            # Анализируем тикер (функция analyze_ticker должна быть определена)
+            if analyze_ticker(ticker, vol_10m, hour_volumes):
+                results[ticker] = vol_10m
+                logger.info(f"🚨 #{ticker}: Alert! (10m volume = {vol_10m})")
+
+        logger.info(f"Обработано тикеров: {len(klines)}. Найдено сработавших: {len(results)}")
+        return results if results else None
+
+    except Exception as e:
+        logger.error(f"Ошибка при проверке объёмов: {e}")
         return None
 
 

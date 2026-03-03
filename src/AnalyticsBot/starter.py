@@ -39,6 +39,7 @@ from analytic_utils import calculate_1h_records
 from analytic_utils import calculate_volumes_slidedWindow
 from analytic_utils import calculate_prices_slidedWindow
 from analytic_utils import check_price_overlimit
+from analytic_utils import check_volume_overlimit
 
 from binance_utils.my_binance_utils import get_trading_symbols
 
@@ -49,14 +50,42 @@ from ramstorage.ram_storage_utils import save_klines_to_ram
 from ramstorage.ram_storage_utils import is_storage_consistent
 
 
+def download_candles_reccursively(trackable_tickers: list[str], minutes: int) -> List[List[CandleRecord]]:
+    logger.info(f"✅ Запущено предварительное скачивание архивных данных {minutes} минутных свеч...")
+    download_start_time = time.time()
+    klines_1m_full: List[List[CandleRecord]] = asyncio.run(download_more_candles(trackable_tickers, minutes, datetime.now()))
+    download_stop_time = time.time()
+    logger.info(f"✅ Скачивание завершено.")
+
+    # Если скачивание шло несколько минут, то прошедшие минуты тоже надо докачать
+    duration_minutes: float = (download_stop_time - download_start_time)/60   
+    while int(duration_minutes) > 0:
+        duration_seconds = download_stop_time - download_start_time
+        logger.warning(f"⚠️ Скачивание заняло {duration_seconds:.2f} секунд.")
+        logger.warning(f"⚠️ За это время уже сформировалось {int(duration_minutes) } минутных свечей.")
+        logger.warning( "⚠️ Необходимо запустить скачивание оставшихся свечей.")
+
+        # Запускаем второй этап скачивания
+        logger.info(f"✅ Запущено предварительное скачивание архивных данных {int(duration_minutes)} минутных свеч...")
+        download_start_time = time.time()
+        sub_klines: List[List[CandleRecord]] = asyncio.run(download_more_candles(trackable_tickers, int(duration_minutes), datetime.now()))
+        download_stop_time = time.time()
+        logger.info(f"✅ Скачивание завершено.")
+        klines_1m_full.extend(sub_klines)
+
+        # Пересчитываем количество минут, которые ещё нужно скачать
+        duration_minutes = (download_stop_time - download_start_time) / 60
+    
+    return klines_1m_full
+
 def getTrackedTickers() -> list[str]:
-    # symbols = get_trading_symbols()
-    # if not symbols:
-    #     return []
+    symbols = get_trading_symbols()
+    if not symbols:
+        return []
                 
     # for s in symbols:
     #     print(s)
-    # return symbols
+    # return symbols[:100]
     return [
         "BTCUSDT", 
         "ETHUSDT",
@@ -194,51 +223,36 @@ def doTick():
     # если файлов результата становится более чем 2 - удаляет самый старый
     # Скрипт автономный и запускается скриптом "starter.py", а далее самостоятельно отслеживает появление новых файлов в папке "/srv/ftp/Bot_v2/Data/K_lines/1M"  и при появлении свежего файла - делает обработку
     # ======================================================= # 
-    logger.info(f"Проверяю превышение объёмов...")
+    logger.info(f"Проверяю превышение максимумов цен...")
+
+    # Список тикеров, у которых превышен лимит на цены
+    price_overlimit_tickers = []
 
     last_minute_key = max(storage_klines.keys())
     last_minute_candles = storage_klines[last_minute_key]
-    preAlerts: Optional[Dict[str, float]] = check_price_overlimit(last_minute_candles, max_highs)
+    price_alerts: Optional[dict[str, float]] = check_price_overlimit(last_minute_candles, max_highs)
 
-    if preAlerts is None:
+    if price_alerts is None:
         logger.error("✅ Проверка закончена. Не зафиксировано превышений.")
     else:
-        logger.info(f"✅ Проверка закончена. Зафиксировано {len(preAlerts)} превышений")
+        price_overlimit_tickers = [candle for candle in last_minute_candles if candle.symbol in price_alerts]
+        logger.info(f"✅ Проверка закончена. Зафиксировано {len(price_overlimit_tickers)} превышений")
+    # ======================================================= # 
+    logger.info(f"Проверяю превышение максимумов объёмов...")
+
+    volume_alerts: Optional[dict[str, float]] = check_volume_overlimit(price_overlimit_tickers, volumes_10m, volumes_10h)
+
+    # Список тикеров, у которых превышен лимит и на цены и на объёмы
+    overlimit_tickers = []
+
+    if volume_alerts is None:
+        logger.error("✅ Проверка закончена. Не зафиксировано превышений.")
+    else:
+        overlimit_tickers = [candle for candle in last_minute_candles if candle.symbol in volume_alerts]
+        logger.info(f"✅ Проверка закончена. Зафиксировано {len(overlimit_tickers)} превышений")
     # ======================================================= # 
 
-    # alerts copy
-    # alert: list[AlertRecord] = get_recent_alerts(1)
-    # update_current_alert(alert)
-
     return
-
-def download_candles_reccursively(trackable_tickers: list[str], minutes: int) -> List[List[CandleRecord]]:
-    logger.info(f"✅ Запущено предварительное скачивание архивных данных {minutes} минутных свеч...")
-    download_start_time = time.time()
-    klines_1m_full: List[List[CandleRecord]] = asyncio.run(download_more_candles(trackable_tickers, minutes, datetime.now()))
-    download_stop_time = time.time()
-    logger.info(f"✅ Скачивание завершено.")
-
-    # Если скачивание шло несколько минут, то прошедшие минуты тоже надо докачать
-    duration_minutes: float = (download_stop_time - download_start_time)/60   
-    while int(duration_minutes) > 0:
-        duration_seconds = download_stop_time - download_start_time
-        logger.warning(f"⚠️ Скачивание заняло {duration_seconds:.2f} секунд.")
-        logger.warning(f"⚠️ За это время уже сформировалось {int(duration_minutes) } минутных свечей.")
-        logger.warning( "⚠️ Необходимо запустить скачивание оставшихся свечей.")
-
-        # Запускаем второй этап скачивания
-        logger.info(f"✅ Запущено предварительное скачивание архивных данных {int(duration_minutes)} минутных свеч...")
-        download_start_time = time.time()
-        sub_klines: List[List[CandleRecord]] = asyncio.run(download_more_candles(trackable_tickers, int(duration_minutes), datetime.now()))
-        download_stop_time = time.time()
-        logger.info(f"✅ Скачивание завершено.")
-        klines_1m_full.extend(sub_klines)
-
-        # Пересчитываем количество минут, которые ещё нужно скачать
-        duration_minutes = (download_stop_time - download_start_time) / 60
-    
-    return klines_1m_full
 
 def start():
     try:

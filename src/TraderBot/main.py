@@ -1,7 +1,6 @@
 import time
 import os
 
-from AlertFileSearcher import get_latest_alert_file, get_latest_alert_calc_file
 from csv_utills import get_tickers_from_csv_pandas, get_min_prices_from_csv_pandas, get_max_prices_from_csv_pandas
 from ticker_utils import compare_tickers, print_comparison_results
 from logic import analyze_stop_loss, open_new_positions, check_available_position, get_position_grow, maximise_with_side, get_price_from_list
@@ -14,13 +13,6 @@ from typing import Optional
 tickers:  List[str] = []
 new_tickers:  List[str] = []
 
-# Укажите путь к вашей директории
-alerts_directory = "C:/workspace/data/alerts/"
-alerts_calc_directory = "C:/workspace/data/alerts_calc"
-
-alerts_file = ""
-alerts_calc_file = ""
-
 binance_all_available_tickers: List = []
 binance_open_tickers: List[str] = []
 
@@ -31,32 +23,6 @@ def print_active_futures_tickers_simple(tickers_list: list):
     print(f"\nАктивные USDT-фьючерсы ({len(tickers_list)} шт.):")
     for i, ticker in enumerate(tickers_list, 1):
         print(f"{i:3}. {ticker}")
-
-def update_files() -> bool:
-    global alerts_directory 
-    global alerts_calc_directory 
-    global alerts_file 
-    global alerts_calc_file 
-    global tickers 
-        
-    # print(f"Самый новый файл: {alerts_file}")
-
-    # Debug. Выставляет на один прогон тикеры
-    # old_alert_file = "C:/workspace/data/alerts/alerts_2026-01-28_test.csv"
-    # tickers = get_tickers_from_csv_pandas(old_alert_file)
-
-    alerts_file = get_latest_alert_file(alerts_directory)
-    alerts_calc_file = get_latest_alert_calc_file(alerts_calc_directory)
-
-    if not alerts_file:
-        print("Файлы alerts_yyyy_mm_dd.csv не найдены")
-        return False
-    
-    if not alerts_calc_file:
-        print("Файлы alerts_calc_yyyy_mm_dd.csv не найдены")
-        return False
-    
-    return True
 
 def update_binance_data() -> bool:
     global binance_all_available_tickers 
@@ -215,11 +181,6 @@ def do_loop(binance_client):
     global binance_open_tickers
     global all_ticker_prices
 
-    if not update_files():
-        print("❌   Problem with files. Stopping logic...")
-        return
-    else:
-        print("  files updated")
 
     if not update_binance_data():
         print("❌   Problem with files. Stopping logic...")

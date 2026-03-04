@@ -6,23 +6,17 @@ from typing import List
 from logger import logger
 from config import *
 
-from bot_types import CandleRecord 
+from bot_types import KlineRecord 
 from bot_types import HoursRecord 
 from bot_types import AlertRecord 
-from bot_types import Volume_10m 
 
 
 # Список всех отметок за MINUTE_CANDLES_LIMIT минут 
 #                   <НОМЕР_МИНУТЫ List<МИНУТНАЯ_ЗАПИСЬ>>
-candle_1m_records: dict[int, list[CandleRecord]] = {}
+candle_1m_records: dict[int, list[KlineRecord]] = {}
 candle_1h_records: dict[int, list[HoursRecord]] = {}
-dynamic_1h_records: list[HoursRecord] = []
 
-alerts_records: list[list[AlertRecord]] = [[] for _ in range(MINUTE_CANDLES_LIMIT)]
-alerts_calc_records: list[list[AlertRecord]] = [[] for _ in range(MINUTE_CANDLES_LIMIT)]
-volume_10m_sliding_window: List[Volume_10m] = []
-
-def is_storage_consistent(candle_dict: dict[int, List[CandleRecord]]) -> bool:
+def is_storage_consistent(candle_dict: dict[int, List[KlineRecord]]) -> bool:
     """
     Проверяет корректность словаря минутных свечей.
 
@@ -59,13 +53,8 @@ def is_storage_consistent(candle_dict: dict[int, List[CandleRecord]]) -> bool:
 
     return True
 
-def get_1m_candles() -> dict[int, list[CandleRecord]]:
+def get_1m_candles() -> dict[int, list[KlineRecord]]:
     return candle_1m_records
-
-def save_10m_volumes(volumes: List[Volume_10m]) -> bool:
-    global volume_10m_sliding_window
-    volume_10m_sliding_window = volumes
-    return True
 
 def save_1h_records(volumes:  dict[int, list[HoursRecord]]) -> bool:
     global candle_1h_records
@@ -73,7 +62,7 @@ def save_1h_records(volumes:  dict[int, list[HoursRecord]]) -> bool:
     return True
 
 
-def save_klines_to_ram(results: List[CandleRecord]):
+def save_klines_to_ram(results: List[KlineRecord]):
     """
     Сохраняет свечи в оперативную память с скользящим окном.
     Ключ словаря – начало минуты (timestamp в ms).
@@ -132,60 +121,7 @@ def save_klines_to_ram(results: List[CandleRecord]):
         )
 
 
-def save_alert_to_memory(ticker, reason):
-    """Сохранить алерт в файл с текущей датой по UTC"""
-    global alerts_records
-    
-    try:
-        # Получаем текущее время в миллисекундах для open_time
-        current_time_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-        
-        alert_record = AlertRecord(ticker, reason, current_time_ms)
-
-        # Проверяем, есть ли уже такой тикер в последних записях
-        minute_exists = False
-        for period in alerts_records:
-            if period and any(alert.ticker == ticker for alert in period):
-                minute_exists = True
-                logger.warning(f"Тикер {ticker} уже присутствует в последних записях")
-                return False
-            
-            # Определяем позицию для вставки (индекс 0 - самая новая минута)
-            # Проверяем, есть ли уже записи за текущую минуту
-            insert_position = 0
-            
-            # Если в alerts_records[0] уже есть записи, создаем новую минуту
-            if alerts_records[0] and alerts_records[0][0].time == current_time_ms:
-                # Добавляем в существующую минуту
-                alerts_records[0].append(alert_record)
-                logger.debug(f"Алерт добавлен в существующую минуту на позиции 0")
-            else:
-                # Создаем новую минуту со сдвигом
-                # Сдвигаем все списки на одну позицию вправо
-                for i in range(len(alerts_records)-1, 0, -1):
-                    alerts_records[i] = alerts_records[i-1]
-                
-                # На первую позицию помещаем новый список с алертом
-                alerts_records[0] = [alert_record]
-                logger.debug(f"Алерт добавлен в новую минуту на позиции 0")
-            
-        return True
-        
-    except Exception as e:
-        logger.error(f"Ошибка при сохранении алерта в файл: {e}")
-        return False
-
-def save_calc_alert_to_ram(rows: List[AlertRecord]):
-    """Записать строки в файл alerts_calc"""
-    global alerts_calc_records
-    try:
-        alerts_calc_records.append(rows)
-        logger.info(f"Записано {len(rows)} строк в alerts_calc_records")
-
-    except Exception as e:
-        logger.error(f"Ошибка при записи в alerts_calc_records: {e}")
-
-def get_recent_1m_klines(count: int = 60) -> dict[int, list[CandleRecord]]:
+def get_recent_1m_klines(count: int = 60) -> dict[int, list[KlineRecord]]:
     """
     Возвращает словарь с минутными свечами за последние N минут.
     Ключи словаря – номера минут (временные метки), значения – списки CandleRecord.
@@ -224,37 +160,3 @@ def get_recent_1h_klines(count: int = 60) -> dict[int, list[HoursRecord]]:
 
     # Формируем результирующий словарь
     return {key: candle_1h_records[key] for key in recent_keys}
-
-def get_recent_alerts(minutes: int = 60) -> list[AlertRecord]:
-    """Получить алерты за последние N минут"""
-    global alerts_records
-    
-    if minutes > len(alerts_records):
-        minutes = len(alerts_records)
-    
-    recent_alerts = []
-    for i in range(minutes):
-        if alerts_records[i]:
-            recent_alerts.extend(alerts_records[i])
-    
-    return recent_alerts
-
-def check_ticker_alert_exists(ticker: str, minutes_back: int = 60) -> bool:
-    """Проверить, был ли алерт по тикеру за последние N минут"""
-    recent_alerts = get_recent_alerts(minutes_back)
-    return any(alert.ticker == ticker for alert in recent_alerts)
-
-def clean_old_alerts_from_memory(hours: int = 24):
-    """Очистить алерты старше N часов из памяти"""
-    global alerts_records
-    
-    current_time_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-    cutoff_time = current_time_ms - (hours * 60 * 60 * 1000)
-    
-    for i, period in enumerate(alerts_records):
-        if period:
-            # Оставляем только алерты новее cutoff_time
-            alerts_records[i] = [alert for alert in period if alert.time >= cutoff_time]
-    
-    logger.info(f"Очищены алерты старше {hours} часов")
-

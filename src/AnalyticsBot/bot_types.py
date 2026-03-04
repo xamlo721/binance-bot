@@ -6,7 +6,7 @@ import pandas as pd
 from datetime import datetime
 
 @dataclass
-class CandleRecord:
+class KlineRecord:
     # Тикер
     symbol: str 
     # Open price - цена открытия
@@ -31,7 +31,7 @@ class CandleRecord:
     num_of_trades: int
     # Open time - время открытия свечи
     open_time: int
-    
+
 @dataclass
 class Volume_10m:
     # Тикер

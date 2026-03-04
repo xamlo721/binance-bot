@@ -5,23 +5,20 @@ from typing import Dict
 from typing import List
 from datetime import datetime
 
-from concurrent.futures import ProcessPoolExecutor, as_completed
-
 from logger import logger
 from config import *
 
-from bot_types import CandleRecord
+from bot_types import KlineRecord
 from bot_types import HoursRecord
 from bot_types import AlertRecord
 
-from AnalyticsBot.ram_storage_utils import save_calc_alert_to_ram
-from AnalyticsBot.ram_storage_utils import Volume_10m
+from AnalyticsBot.bot_types import Volume_10m
 
 current_alerts: list[AlertRecord] = []
 
 from typing import Dict, List, Optional
 
-def calculate_10m_volumes_slidedWindow(candle_dict: dict[int, List[CandleRecord]]) -> Optional[List[Volume_10m]]:
+def calculate_10m_volumes_slidedWindow(candle_dict: dict[int, List[KlineRecord]]) -> Optional[List[Volume_10m]]:
     """
     Возвращает список Volume_10m – один объект для каждого тикера,
     содержащий суммарный объём за последние 10 минут и временные метки начала/конца
@@ -80,7 +77,7 @@ def calculate_10m_volumes_slidedWindow(candle_dict: dict[int, List[CandleRecord]
         for i in range(n_symbols)
     ]
 
-def calculate_1h_records(candle_1m_records: dict[int, list[CandleRecord]]) -> Optional[dict[int, list[HoursRecord]]]:
+def calculate_1h_records(candle_1m_records: dict[int, list[KlineRecord]]) -> Optional[dict[int, list[HoursRecord]]]:
     """
     Вычисляет часовые агрегаты на основе минутных свечей.
     Возвращает словарь, где ключ – начало часа (timestamp в миллисекундах), 
@@ -292,7 +289,7 @@ def calculate_prices_slidedWindow(hours_records: dict[int, list[HoursRecord]], n
         logger.error(f"Ошибка при обработке часовых записей: {e}")
         return None
 
-def check_price_overlimit(klines: List[CandleRecord], aggregated_highs: dict[str, float]) -> Optional[dict[str, float]]:
+def check_price_overlimit(klines: List[KlineRecord], aggregated_highs: dict[str, float]) -> Optional[dict[str, float]]:
     """
     Сравнивает цены закрытия минутных свечей с максимальными значениями high из агрегированных данных
     
@@ -378,7 +375,7 @@ def analyze_ticker(ticker: str, volume_10m: Optional[float], volume_10h_list: Li
     # Все условия выполнены
     return True
 
-def check_volume_overlimit(klines: List[CandleRecord], volumes_10m: List[Volume_10m], volumes_10h: Dict[str, Dict[str, float]]) -> Optional[dict[str, float]]:
+def check_volume_overlimit(klines: List[KlineRecord], volumes_10m: List[Volume_10m], volumes_10h: Dict[str, Dict[str, float]]) -> Optional[dict[str, float]]:
     """
     Проверяет превышение лимитов объёма для тикеров из последней минуты.
 

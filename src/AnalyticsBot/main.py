@@ -24,14 +24,17 @@ from AnalyticsBot.downloader import download_current_1m_Candles
 from AnalyticsBot.downloader import download_more_candles
 
 from bot_types import AlertRecord
-from bot_types import CandleRecord
+from bot_types import KlineRecord
 from bot_types import HoursRecord
-from AnalyticsBot.ram_storage_utils import Volume_10m
+from bot_types import Volume_10m
 
-from AnalyticsBot.ram_storage_utils import get_recent_alerts
-from AnalyticsBot.ram_storage_utils import get_recent_1m_klines
-from AnalyticsBot.ram_storage_utils import get_recent_1h_klines
-from AnalyticsBot.ram_storage_utils import get_1m_candles
+from AnalyticsBot.storage_utils import get_recent_1m_klines
+from AnalyticsBot.storage_utils import get_recent_1h_klines
+from AnalyticsBot.storage_utils import get_1m_candles
+from AnalyticsBot.storage_utils import get_recent_1m_klines
+from AnalyticsBot.storage_utils import save_1h_records
+from AnalyticsBot.storage_utils import save_klines_to_ram
+from AnalyticsBot.storage_utils import is_storage_consistent
 
 from analytic_utils import calculate_10m_volumes_slidedWindow
 from analytic_utils import calculate_1h_records
@@ -40,19 +43,14 @@ from analytic_utils import calculate_prices_slidedWindow
 from analytic_utils import check_price_overlimit
 from analytic_utils import check_volume_overlimit
 
-from AnalyticsBot.my_binance_utils import get_trading_symbols
-
-from AnalyticsBot.ram_storage_utils import get_recent_1m_klines
-from AnalyticsBot.ram_storage_utils import save_1h_records
-from AnalyticsBot.ram_storage_utils import save_10m_volumes
-from AnalyticsBot.ram_storage_utils import save_klines_to_ram
-from AnalyticsBot.ram_storage_utils import is_storage_consistent
+from AnalyticsBot.binance_utils import get_trading_symbols
 
 
-def download_candles_reccursively(trackable_tickers: list[str], minutes: int) -> List[List[CandleRecord]]:
+
+def download_candles_reccursively(trackable_tickers: list[str], minutes: int) -> List[List[KlineRecord]]:
     logger.info(f"✅ Запущено предварительное скачивание архивных данных {minutes} минутных свеч...")
     download_start_time = time.time()
-    klines_1m_full: List[List[CandleRecord]] = asyncio.run(download_more_candles(trackable_tickers, minutes, datetime.now()))
+    klines_1m_full: List[List[KlineRecord]] = asyncio.run(download_more_candles(trackable_tickers, minutes, datetime.now()))
     download_stop_time = time.time()
     logger.info(f"✅ Скачивание завершено.")
 
@@ -67,7 +65,7 @@ def download_candles_reccursively(trackable_tickers: list[str], minutes: int) ->
         # Запускаем второй этап скачивания
         logger.info(f"✅ Запущено предварительное скачивание архивных данных {int(duration_minutes)} минутных свеч...")
         download_start_time = time.time()
-        sub_klines: List[List[CandleRecord]] = asyncio.run(download_more_candles(trackable_tickers, int(duration_minutes), datetime.now()))
+        sub_klines: List[List[KlineRecord]] = asyncio.run(download_more_candles(trackable_tickers, int(duration_minutes), datetime.now()))
         download_stop_time = time.time()
         logger.info(f"✅ Скачивание завершено.")
         klines_1m_full.extend(sub_klines)
@@ -128,7 +126,7 @@ def doTick():
             missing_minutes = min(diff_ms // 60000, MINUTE_CANDLES_LIMIT)
             logger.info(f"Найдены {missing_minutes} недостающих минут. Скачиваем...")
 
-            klines_missing: List[List[CandleRecord]] = download_candles_reccursively(trackable_tickers, missing_minutes)
+            klines_missing: List[List[KlineRecord]] = download_candles_reccursively(trackable_tickers, missing_minutes)
 
             if klines_missing:
                 for minute_candles in klines_missing:
@@ -140,7 +138,7 @@ def doTick():
     # ======================================================= # 
 
     logger.info(f"Запускаю проверку хранилища на консистентность...")
-    storage_klines: dict[int, list[CandleRecord]] = get_1m_candles()
+    storage_klines: dict[int, list[KlineRecord]] = get_1m_candles()
     if not is_storage_consistent(storage_klines):
         logger.error("Список candle_1m_records не содержит непрерывный диапазон минутных свечей.")
         return
@@ -149,7 +147,7 @@ def doTick():
     # ======================================================= # 
 
     logger.info(f"Обновляю скользящие 10м объёмы...")
-    klines_1m: dict[int, list[CandleRecord]] = get_recent_1m_klines(MINUTE_CANDLES_LIMIT)
+    klines_1m: dict[int, list[KlineRecord]] = get_recent_1m_klines(MINUTE_CANDLES_LIMIT)
     if (len(klines_1m) < 10):
         logger.error(f"❌ Найдено только {len(klines_1m)} минутных свечей в хранилище.")
         logger.error(f"❌ Нужно хотя бы 10. Пропускаем тик.")
@@ -158,11 +156,6 @@ def doTick():
     volumes_10m: Optional[List[Volume_10m]] = calculate_10m_volumes_slidedWindow(klines_1m)
     if volumes_10m is None:
         logger.error(f"❌ Ошибка вычисления 10м объёмов. Пропускаем тик.")
-        return
-
-    # Сохраняем результат
-    if not save_10m_volumes(volumes_10m):
-        logger.error(f"❌ Ошибка сохранении 10м объёмов в RAM. Пропускаем тик.")
         return
 
     logger.info(f"✅ Обновление 10м интервалов объёмов успешно. Получилось {len(volumes_10m)} маркеров")
@@ -266,7 +259,7 @@ def start():
         logger.info(f"✅ Найдено торгующихся тикеров: {len(trackable_tickers)}")
 
         
-        klines_1m_full: List[List[CandleRecord]] = download_candles_reccursively(trackable_tickers, MINUTE_CANDLES_LIMIT)
+        klines_1m_full: List[List[KlineRecord]] = download_candles_reccursively(trackable_tickers, MINUTE_CANDLES_LIMIT)
 
         logger.info(f"✅ Актуальные архивные данные за {len(klines_1m_full)} минут получены.")
 
@@ -280,7 +273,7 @@ def start():
         logger.info(f"Записываю данные в хранилище...")
 
 
-        storage_klines: dict[int, list[CandleRecord]] = get_1m_candles()
+        storage_klines: dict[int, list[KlineRecord]] = get_1m_candles()
         logger.info(f"Запускаю проверку хранилища на консистентность...")
         if not is_storage_consistent(storage_klines):
             logger.error("Список candle_1m_records не содержит непрерывный диапазон минутных свечей.")

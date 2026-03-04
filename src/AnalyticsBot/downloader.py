@@ -14,9 +14,9 @@ from AnalyticsBot.my_binance_utils import fetch_all_tickers_volumes_for_time
 from AnalyticsBot.my_binance_utils import fetch_ticker_1m_volumes_for_time
 
 from AnalyticsBot.ram_storage_utils import save_klines_to_ram
-from bot_types import CandleRecord
+from bot_types import KlineRecord
 
-async def download_more_candles(symbols: list[str], count: int, start_time: datetime)-> List[List[CandleRecord]]:
+async def download_more_candles(symbols: list[str], count: int, start_time: datetime)-> List[List[KlineRecord]]:
     "Скачивает count минутных свечей начиная от datetime"
     start_ts = time.time()
 

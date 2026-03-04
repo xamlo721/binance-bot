@@ -8,7 +8,7 @@ from AnalyticsBot.config import *
 
 from datetime import datetime
 
-from bot_types import CandleRecord
+from bot_types import KlineRecord
 
 from collections import deque
 from typing import List
@@ -80,7 +80,7 @@ def get_trading_symbols():
         return []
     
 
-async def fetch_ticker_1m_volumes(session, symbol, limiter, candleDepth: int = 1) -> CandleRecord | None:
+async def fetch_ticker_1m_volumes(session, symbol, limiter, candleDepth: int = 1) -> KlineRecord | None:
     """Асинхронное получение данных для одного тикера с ограничением"""
     await limiter.wait_if_needed()
     
@@ -109,7 +109,7 @@ async def fetch_ticker_1m_volumes(session, symbol, limiter, candleDepth: int = 1
 
                         # Структура, согласно документации
                         # https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Kline-Candlestick-Data
-                        return CandleRecord(
+                        return KlineRecord(
                             symbol=symbol,
                             open_time=kline[0],
                             open=float(kline[1]),
@@ -173,7 +173,7 @@ async def _fetch_with_limits(session, symbol, count, semaphore, limiter, fetch_f
     async with semaphore:
         return await fetch_func(session, symbol, count,  limiter, *args, **kwargs)
 
-async def fetch_all_tickers_volumes_for_time(symbols, count: int, end_timestamp, max_concurrent: int = THREAD_POOL_SIZE) -> List[List[CandleRecord]]:
+async def fetch_all_tickers_volumes_for_time(symbols, count: int, end_timestamp, max_concurrent: int = THREAD_POOL_SIZE) -> List[List[KlineRecord]]:
     """Асинхронное получение данных для всех тикеров для конкретного времени с ограничением"""
     # Для исторических данных уменьшаем параллельность
     max_concurrent = min(max_concurrent, THREAD_POOL_SIZE)
@@ -194,10 +194,10 @@ async def fetch_all_tickers_volumes_for_time(symbols, count: int, end_timestamp,
             )
             tasks.append(task)
         
-        tickers_data: List[List[CandleRecord]] = []
+        tickers_data: List[List[KlineRecord]] = []
         completed = 0
         for task in asyncio.as_completed(tasks):
-            result: List[CandleRecord] = await task
+            result: List[KlineRecord] = await task
             if result:
                 tickers_data.append(result)
             completed += 1
@@ -209,7 +209,7 @@ async def fetch_all_tickers_volumes_for_time(symbols, count: int, end_timestamp,
                 await asyncio.sleep(0.5)
                 # Транспонируем в список минут
                 
-        minutes_data: List[List[CandleRecord]] = [[] for _ in range(count)]
+        minutes_data: List[List[KlineRecord]] = [[] for _ in range(count)]
         
         for ticker_candles in tickers_data:
             for minute_index, candle in enumerate(ticker_candles):
@@ -219,7 +219,7 @@ async def fetch_all_tickers_volumes_for_time(symbols, count: int, end_timestamp,
         logger.info(f"Сформировано {len(minutes_data)} минут по {len(minutes_data[0]) if minutes_data else 0} тикеров")
         return minutes_data
 
-async def fetch_ticker_1m_volumes_for_time(session, symbol, count: int, limiter, end_timestamp: int) -> list[CandleRecord] | None:
+async def fetch_ticker_1m_volumes_for_time(session, symbol, count: int, limiter, end_timestamp: int) -> list[KlineRecord] | None:
     """Асинхронное получение данных для одного тикера для конкретного времени"""
     await limiter.wait_if_needed()  # Ждем разрешения от rate limiter
 
@@ -260,7 +260,7 @@ async def fetch_ticker_1m_volumes_for_time(session, symbol, count: int, limiter,
                     for kline in data:
                         # Структура, согласно документации
                         # https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Kline-Candlestick-Data
-                        candle = CandleRecord(
+                        candle = KlineRecord(
                             symbol=symbol,
                             open_time=kline[0],
                             open=float(kline[1]),

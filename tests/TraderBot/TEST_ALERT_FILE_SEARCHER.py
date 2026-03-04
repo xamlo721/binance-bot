@@ -1,4 +1,4 @@
-from AlertFileSearcher import get_latest_alert_file
+from src.TraderBot.AlertFileSearcher import get_latest_alert_file
 
 if __name__ == "__main__":
 

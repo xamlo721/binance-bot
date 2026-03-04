@@ -1,4 +1,4 @@
-from ticker_utils import compare_tickers, print_comparison_results
+from src.TraderBot.ticker_utils import compare_tickers, print_comparison_results
 
 
 if __name__ == "__main__":

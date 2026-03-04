@@ -6,20 +6,11 @@ from typing import List
 from logger import logger
 from config import *
 
-from AnalyticsBot.ramstorage.CandleRecord import CandleRecord 
-from AnalyticsBot.ramstorage.HoursRecord import HoursRecord 
-from AnalyticsBot.ramstorage.AlertRecord import AlertRecord 
+from bot_types import CandleRecord 
+from bot_types import HoursRecord 
+from bot_types import AlertRecord 
+from bot_types import Volume_10m 
 
-@dataclass
-class Volume_10m:
-    # Тикер
-    ticker:str
-    # Объёмы 10 минутных свечей
-    volume: float
-    # Время открытия перовой свечи
-    open_time: int
-    # Время открытия 10й свечи
-    close_time:int
 
 # Список всех отметок за MINUTE_CANDLES_LIMIT минут 
 #                   <НОМЕР_МИНУТЫ List<МИНУТНАЯ_ЗАПИСЬ>>
@@ -149,11 +140,7 @@ def save_alert_to_memory(ticker, reason):
         # Получаем текущее время в миллисекундах для open_time
         current_time_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
         
-        alert_record = AlertRecord.create_from_alert(
-            ticker=ticker,
-            reason=reason,
-            current_time=current_time_ms
-        )
+        alert_record = AlertRecord(ticker, reason, current_time_ms)
 
         # Проверяем, есть ли уже такой тикер в последних записях
         minute_exists = False

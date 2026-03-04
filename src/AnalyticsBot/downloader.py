@@ -8,13 +8,13 @@ from datetime import datetime
 from datetime import timedelta
 from typing import List
 
-from binance_utils.my_binance_utils import get_trading_symbols
-from binance_utils.my_binance_utils import fetch_all_tickers_volumes
-from binance_utils.my_binance_utils import fetch_all_tickers_volumes_for_time
-from binance_utils.my_binance_utils import fetch_ticker_1m_volumes_for_time
+from AnalyticsBot.my_binance_utils import get_trading_symbols
+from AnalyticsBot.my_binance_utils import fetch_all_tickers_volumes
+from AnalyticsBot.my_binance_utils import fetch_all_tickers_volumes_for_time
+from AnalyticsBot.my_binance_utils import fetch_ticker_1m_volumes_for_time
 
-from ramstorage.ram_storage_utils import save_klines_to_ram
-from ramstorage.ram_storage_utils import CandleRecord
+from AnalyticsBot.ram_storage_utils import save_klines_to_ram
+from bot_types import CandleRecord
 
 async def download_more_candles(symbols: list[str], count: int, start_time: datetime)-> List[List[CandleRecord]]:
     "Скачивает count минутных свечей начиная от datetime"

@@ -10,12 +10,12 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from logger import logger
 from config import *
 
-from ramstorage.CandleRecord import CandleRecord
-from ramstorage.HoursRecord import HoursRecord
-from ramstorage.AlertRecord import AlertRecord
+from bot_types import CandleRecord
+from bot_types import HoursRecord
+from bot_types import AlertRecord
 
-from ramstorage.ram_storage_utils import save_calc_alert_to_ram
-from ramstorage.ram_storage_utils import Volume_10m
+from AnalyticsBot.ram_storage_utils import save_calc_alert_to_ram
+from AnalyticsBot.ram_storage_utils import Volume_10m
 
 current_alerts: list[AlertRecord] = []
 
@@ -428,36 +428,3 @@ def check_volume_overlimit(klines: List[CandleRecord], volumes_10m: List[Volume_
     except Exception as e:
         logger.error(f"Ошибка при проверке объёмов: {e}")
         return None
-
-
-
-def update_current_alert(alerts: List[AlertRecord]):
-    global current_alerts
-    """Найти самый свежий файл в папке"""
-    try:
-        if alerts != current_alerts:
-            logger.info(f"Обнаружен новый набор алертов!: {alerts[0].time}")    
-            current_alerts = alerts
-            logger.info(f"Загружено {len(alerts)} строк из файла")
-
-            process_new_rows(alerts)
-
-    except Exception as e:
-        logger.error(f"Ошибка при обновлении текущего файла: {e}")
-
-def process_new_rows(new_alerts: List[AlertRecord]):
-    """Обработать новые строки"""
-    processed_alerts: List[AlertRecord] = []
-    
-    # Анализируем каждую новую строку
-    for alert in new_alerts:
-
-        # Проверяем, есть ли значения цен
-        if alert.buy_short_price and alert.min_price and alert.max_price:
-            logger.info(f"Найдены цены для {alert.ticker}")
-            processed_alerts.append(alert)
-        else:
-            # TODO: А как они могут быть не заполнены? 
-            logger.warning(f"Цены не заполнены для {alert.ticker}, пропускаем")
-
-    save_calc_alert_to_ram(processed_alerts)

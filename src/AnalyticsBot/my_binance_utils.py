@@ -8,7 +8,7 @@ from AnalyticsBot.config import *
 
 from datetime import datetime
 
-from ramstorage.ram_storage_utils import CandleRecord
+from bot_types import CandleRecord
 
 from collections import deque
 from typing import List

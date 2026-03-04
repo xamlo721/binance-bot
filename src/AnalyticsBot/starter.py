@@ -23,17 +23,16 @@ from typing import List
 from AnalyticsBot.downloader import download_current_1m_Candles                                               
 from AnalyticsBot.downloader import download_more_candles
 
-from ramstorage.AlertRecord import AlertRecord
-from ramstorage.CandleRecord import CandleRecord
-from ramstorage.HoursRecord import HoursRecord
-from ramstorage.ram_storage_utils import Volume_10m
+from bot_types import AlertRecord
+from bot_types import CandleRecord
+from bot_types import HoursRecord
+from AnalyticsBot.ram_storage_utils import Volume_10m
 
-from ramstorage.ram_storage_utils import get_recent_alerts
-from ramstorage.ram_storage_utils import get_recent_1m_klines
-from ramstorage.ram_storage_utils import get_recent_1h_klines
-from ramstorage.ram_storage_utils import get_1m_candles
+from AnalyticsBot.ram_storage_utils import get_recent_alerts
+from AnalyticsBot.ram_storage_utils import get_recent_1m_klines
+from AnalyticsBot.ram_storage_utils import get_recent_1h_klines
+from AnalyticsBot.ram_storage_utils import get_1m_candles
 
-from analytic_utils import update_current_alert
 from analytic_utils import calculate_10m_volumes_slidedWindow
 from analytic_utils import calculate_1h_records
 from analytic_utils import calculate_volumes_slidedWindow
@@ -41,13 +40,13 @@ from analytic_utils import calculate_prices_slidedWindow
 from analytic_utils import check_price_overlimit
 from analytic_utils import check_volume_overlimit
 
-from binance_utils.my_binance_utils import get_trading_symbols
+from AnalyticsBot.my_binance_utils import get_trading_symbols
 
-from ramstorage.ram_storage_utils import get_recent_1m_klines
-from ramstorage.ram_storage_utils import save_1h_records
-from ramstorage.ram_storage_utils import save_10m_volumes
-from ramstorage.ram_storage_utils import save_klines_to_ram
-from ramstorage.ram_storage_utils import is_storage_consistent
+from AnalyticsBot.ram_storage_utils import get_recent_1m_klines
+from AnalyticsBot.ram_storage_utils import save_1h_records
+from AnalyticsBot.ram_storage_utils import save_10m_volumes
+from AnalyticsBot.ram_storage_utils import save_klines_to_ram
+from AnalyticsBot.ram_storage_utils import is_storage_consistent
 
 
 def download_candles_reccursively(trackable_tickers: list[str], minutes: int) -> List[List[CandleRecord]]:

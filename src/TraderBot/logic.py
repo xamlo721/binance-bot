@@ -4,6 +4,7 @@ from binance.client import Client
 from ticker_utils import compare_tickers, print_comparison_results
 
 from typing import List
+from bot_types import AlertRecord
 
 def get_price_from_list(ticker: str, all_ticker_prices) -> float:
 
@@ -43,35 +44,36 @@ def analyze_stop_loss(pct_change,  side, low_level, high_level) -> bool:
     else:
         return False
 
-def check_available_position(
-    tickers:  List[str], 
-    new_tickers:  List[str], 
-    binance_open_tickers: List[str]
-) -> List[str]:
-
-    tickers_diff = compare_tickers(tickers, new_tickers)
-    print_comparison_results(tickers_diff)
-
-    # print_active_futures_tickers_simple(binance_active_tickers)
-    print("-" * 50)
-    # print_active_futures_tickers_simple(binance_open_tickers)
-
+def check_available_position(active_alerts: list[AlertRecord], new_alerts: list[AlertRecord], binance_open_tickers: List[str]) -> list[AlertRecord]:
+    """
+    Определяет, какие из новых алертов ещё не были обработаны и не имеют открытых позиций.
+    
+    Args:
+        active_alerts: список уже обработанных алертов
+        new_alerts: список свежих алертов
+        binance_open_tickers: список тикеров с открытыми позициями на бирже
+    
+    Returns:
+        Список алертов (AlertRecord), подходящих для открытия новых позиций.
+    """
+    result: list[AlertRecord] = []
     print("Ищу неоткрытые позиции среди новых тикеров")
-    added_file_tickers = tickers_diff['added']
-    potencial_tickers_diff = compare_tickers(binance_open_tickers, added_file_tickers)
-    # print_comparison_results(potencial_tickers_diff)
 
-    new_order_ticker = potencial_tickers_diff['added']
+    # Новые сигналы, которые мы раньше не обрабатывали
+    alerts_diff: list[AlertRecord] = list(set(new_alerts) - set(active_alerts))
 
-    if not len(new_order_ticker):
+    # Вычислить все те, по которым уже открыты позиции
+    new_alerts_for_open = [alert for alert in alerts_diff if alert.ticker not in binance_open_tickers]
+
+    if not len(new_alerts_for_open):
         print("❌ Данные обновлены, торговать нечем.")
         return []
 
     print("⚠️ we have new tickers for open position!:")
-    for i, ticker in enumerate(new_order_ticker, 1):
+    for i, ticker in enumerate(new_alerts_for_open, 1):
         print(f"{i:3d}. {ticker}")
 
-    return new_order_ticker
+    return result
 
 def get_max_leverage(binance_client: Client, ticker: str) -> int:
 
@@ -88,20 +90,19 @@ def get_max_leverage(binance_client: Client, ticker: str) -> int:
     except Exception as bracket_error:
         print(f"Не удалось получить брекеты плеча: {bracket_error}")
         return 0
-    
 
-def open_new_positions(binance_client: Client, ticker_positions:  List[str], side, amount_usdt: int, leverage: int, stop_lose_pct: float):
+def open_new_positions(binance_client: Client, alerts: list[AlertRecord], side, amount_usdt: int, leverage: int, stop_lose_pct: float):
     print("⚠️ Открываем позиции!")
 
-    for i, ticker in enumerate(ticker_positions, 1):
-        max_leverage: int = get_max_leverage(binance_client, ticker)
+    for i, alert in enumerate(alerts, 1):
+        max_leverage: int = get_max_leverage(binance_client, alert.ticker)
 
         if leverage > max_leverage:
-            print(f"⚠️ Плечо {leverage}x > максимального {max_leverage}x для {ticker}")
+            print(f"⚠️ Плечо {leverage}x > максимального {max_leverage}x для {alert}")
             leverage = max_leverage
-            print(f"Допустимое плечо для {ticker}: до {max_leverage}x")
+            print(f"⚠️ Допустимое плечо для {alert}: до {max_leverage}x")
 
-        open_futures_position(binance_client, ticker, side, amount_usdt, leverage, stop_lose_pct)
+        open_futures_position(binance_client, alert.ticker, side, amount_usdt, leverage, stop_lose_pct)
 
     print("Complete!")
 

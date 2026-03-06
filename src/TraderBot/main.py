@@ -1,7 +1,6 @@
 import time
 import os
 
-from csv_utills import get_tickers_from_csv_pandas, get_min_prices_from_csv_pandas, get_max_prices_from_csv_pandas
 from ticker_utils import compare_tickers, print_comparison_results
 from logic import analyze_stop_loss, open_new_positions, check_available_position, get_position_grow, maximise_with_side, get_price_from_list
 from binance_utils import get_binance_client, get_binance_all_available_futures_tickers, get_open_futures_positions, open_futures_position, move_stop_loss, get_futures_sl_order
@@ -10,14 +9,15 @@ from typing import List
 from typing import Dict
 from typing import Optional
 
-tickers:  List[str] = []
-new_tickers:  List[str] = []
+from bot_types import AlertRecord
+from network_utils import takeAlerts
+
+active_alerts:  List[AlertRecord] = []
 
 binance_all_available_tickers: List = []
 binance_open_tickers: List[str] = []
 
 all_ticker_prices: Dict
-
 
 def print_active_futures_tickers_simple(tickers_list: list):
     print(f"\nАктивные USDT-фьючерсы ({len(tickers_list)} шт.):")
@@ -33,47 +33,36 @@ def update_binance_data() -> bool:
 
     return True
 
-def update_tickers() -> bool:
-    global tickers 
-    global new_tickers 
-    global all_ticker_prices
+def check_for_new_alerts() -> Optional[list[AlertRecord]]:
 
-    new_tickers = get_tickers_from_csv_pandas(alerts_file)
+    # Забираем из буфера аналитического бота новые алерты, если они есть
+    alerts: list[AlertRecord] = takeAlerts()
 
-    if not new_tickers:
-        print("Новые тикеры не найдены")
-        return False
+    if not alerts or  len(alerts):
+        print("Новые сигналы от аналитического бота не найдены не найдены")
+        return []
     
-    print(f"Найдено {len(new_tickers)} уникальных тикеров:")
+    print(f"Найдено {len(alerts)} уникальных тикеров.")
 
-    if not tickers:
-        print("Не обнаружены предыдущие значения тикеров, обновляю данные...")
-        tickers = new_tickers
-        return False
-    
-    all_ticker_prices = binance_client.futures_symbol_ticker()
-    
-    return True
+    return alerts
 
 # -----------------------------------------------------------------------------------------------------------------------------------------
 def check_open_orders(
     binance_client: Client, 
     binance_open_tickers: List[str], 
     all_ticker_prices: Dict, 
-    new_tickers: List[str],
-    short_position_prices,
-    long_position_prices, 
+    new_alerts: list[AlertRecord], 
     positions_info
 ):
     print("-" * 50)
-    for i, ticker in enumerate(binance_open_tickers, 1):
+    for i, alert in enumerate(binance_open_tickers, 1):
         # Найти данные позиции по тикеру
-        pos = next((p for p in positions_info if p['symbol'] == ticker), None)
+        pos = next((p for p in positions_info if p['symbol'] == alert), None)
         if not pos:
-            print(f"--- analysing order {i}: {ticker} – position info missing")
+            print(f"--- analysing order {i}: {alert} – position info missing")
             continue
  
-        order: Optional[Dict] = get_futures_sl_order(binance_client, ticker)
+        order: Optional[Dict] = get_futures_sl_order(binance_client, alert)
         if order is None:
             continue
 
@@ -85,13 +74,12 @@ def check_open_orders(
         breakEvenPrice = float(pos.get('breakEvenPrice', 0))
 
         # Текущая цена монеты
-        current_price = get_price_from_list(ticker, all_ticker_prices)
+        current_price = get_price_from_list(alert, all_ticker_prices)
 
         # Процент изменения от цены открытия
         pct_change = get_position_grow(entry_price, current_price)
 
-        
-        print(f"--- analysing order {i}: {ticker}")
+        print(f"--- analysing order {i}: {alert}")
         print(f"    Entry price: {entry_price:.8f} | Current price: {current_price:.8f} | Current SL: {stop_order_price:.8f}")
         print(f"    Position side: {side} | Quantity: {quantity:.6f}")
         print(f"    breakEvenPrice: {breakEvenPrice} | Quantity: {quantity:.6f}")
@@ -106,7 +94,7 @@ def check_open_orders(
                 print("Текущий SL лучше, не двигаемся.")
                 continue
  
-            move_stop_loss(binance_client, ticker, side, quantity, breakEvenPrice)
+            move_stop_loss(binance_client, alert, side, quantity, breakEvenPrice)
             print("    position moved.")
         else:
             print("    No adjustment needed. (3-5 signal)")
@@ -115,26 +103,14 @@ def check_open_orders(
         print("-" * 50)
         print("Анализ TP")
 
-        if not ticker in new_tickers:
-            print(f"По паре {ticker} нет аналитики, пропускаю....")
+        # Ищем объект AlertRecord с таким ticker
+        alert_record = next((a for a in new_alerts if a.ticker == alert), None)
+        if alert_record is None or alert_record.min_price is None or alert_record.max_price is None:
+            print(f"По паре {alert} нет аналитики, пропускаю....")
             continue
 
-        if len(new_tickers) != len(short_position_prices):
-            print(f"Кажется аналитика для {ticker} ещё не готова, пропускаю....")
-            continue
-
-        ticker_index: int
-        # Получаем индекс тикера в списке `new_tickers`
-        try:
-            ticker_index = new_tickers.index(ticker)
-        except ValueError:
-            # Тикер не найден – можно вернуть None или -1
-            ticker_index = 0
-            print(f"Тикер {ticker} отсутствует в списке")
-            continue
-
-        short_min_price = float(short_position_prices[ticker_index])
-        long_max_price = float(long_position_prices[ticker_index])
+        short_min_price = alert_record.min_price
+        long_max_price = alert_record.max_price 
 
         # Цена, к которой мы стремимся
         max_ticker_price = long_max_price if float(pos.get('positionAmt')) > 0 else short_min_price
@@ -163,7 +139,7 @@ def check_open_orders(
             print(f"    Moving stop‑loss to {new_stop_order_price:.8f}")
             move_stop_loss(
                 binance_client,
-                ticker,
+                alert,
                 side,
                 quantity,
                 new_stop_order_price
@@ -176,11 +152,9 @@ def check_open_orders(
 
 
 def do_loop(binance_client):
-    global tickers
-    global new_tickers
+    global active_alerts
     global binance_open_tickers
     global all_ticker_prices
-
 
     if not update_binance_data():
         print("❌   Problem with files. Stopping logic...")
@@ -188,31 +162,26 @@ def do_loop(binance_client):
     else:
         print("  binance data updated")
 
-    if not update_tickers():
+    all_ticker_prices = binance_client.futures_symbol_ticker()
+
+    new_alerts: Optional[list[AlertRecord]] = check_for_new_alerts()
+    if new_alerts is None:
         print("❌   Problem with files. Stopping logic...")
         return
     else:
         print("  tickers updated")
 
-    available_poss:  List[str] = check_available_position(
-        tickers= tickers,
-        new_tickers = new_tickers,
-        binance_open_tickers = binance_open_tickers
-    )
+    available_poss: list[AlertRecord] = check_available_position(active_alerts, new_alerts, binance_open_tickers)
 
     open_new_positions(
         binance_client = binance_client, 
-        ticker_positions = available_poss,
+        alerts = available_poss,
         side = 'BUY',
-        amount_usdt= 10,
-        leverage= 10,
+        amount_usdt = 10,
+        leverage = 10,
         stop_lose_pct = 5
     )
     
-    # Сейчас как подвину
-    short_position_prices = get_min_prices_from_csv_pandas(alerts_calc_file)
-    long_position_prices = get_max_prices_from_csv_pandas(alerts_calc_file)
-
     # Получаем информацию о всех открытых позициях (должна включать entryPrice)
     positions_info = binance_client.futures_position_information()
 
@@ -221,13 +190,11 @@ def do_loop(binance_client):
         binance_client, 
         binance_open_tickers, 
         all_ticker_prices, 
-        new_tickers, 
-        short_position_prices, 
-        long_position_prices,
+        new_alerts,
         positions_info
     )
 
-    tickers = new_tickers
+    active_alerts.extend(available_poss)
 
 
 if __name__ == "__main__":

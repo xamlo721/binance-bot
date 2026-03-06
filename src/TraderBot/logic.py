@@ -1,6 +1,8 @@
 from binance_utils import open_futures_position
 from binance.client import Client
 
+from logger import *
+
 from typing import List
 from bot_types import AlertRecord
 
@@ -13,7 +15,7 @@ def get_price_from_list(ticker: str, all_ticker_prices) -> float:
     )
 
     if current_price_str is None:
-        print(f" we not found price for {ticker}")
+        logger.warning(f" we not found price for {ticker}")
         return 0
 
     # Текущая цена монеты
@@ -55,7 +57,7 @@ def check_available_position(active_alerts: list[AlertRecord], new_alerts: list[
         Список алертов (AlertRecord), подходящих для открытия новых позиций.
     """
     result: list[AlertRecord] = []
-    print("Ищу неоткрытые позиции среди новых тикеров")
+    logger.info("Ищу неоткрытые позиции среди новых тикеров")
 
     # Новые сигналы, которые мы раньше не обрабатывали
     alerts_diff: list[AlertRecord] = list(set(new_alerts) - set(active_alerts))
@@ -64,12 +66,12 @@ def check_available_position(active_alerts: list[AlertRecord], new_alerts: list[
     new_alerts_for_open = [alert for alert in alerts_diff if alert.ticker not in binance_open_tickers]
 
     if not len(new_alerts_for_open):
-        print("❌ Данные обновлены, торговать нечем.")
+        logger.error("❌ Данные обновлены, торговать нечем.")
         return []
 
-    print("⚠️ we have new tickers for open position!:")
+    logger.warning("⚠️ we have new tickers for open position!:")
     for i, ticker in enumerate(new_alerts_for_open, 1):
-        print(f"{i:3d}. {ticker}")
+        logger.info(f"{i:3d}. {ticker}")
 
     return result
 
@@ -86,22 +88,22 @@ def get_max_leverage(binance_client: Client, ticker: str) -> int:
         return max_leverage
     
     except Exception as bracket_error:
-        print(f"Не удалось получить брекеты плеча: {bracket_error}")
+        logger.error(f"Не удалось получить брекеты плеча: {bracket_error}")
         return 0
 
 def open_new_positions(binance_client: Client, alerts: list[AlertRecord], side, amount_usdt: int, leverage: int, stop_lose_pct: float):
-    print("⚠️ Открываем позиции!")
+    logger.warning("⚠️ Открываем позиции!")
 
     for i, alert in enumerate(alerts, 1):
         max_leverage: int = get_max_leverage(binance_client, alert.ticker)
 
         if leverage > max_leverage:
-            print(f"⚠️ Плечо {leverage}x > максимального {max_leverage}x для {alert}")
+            logger.warning(f"⚠️ Плечо {leverage}x > максимального {max_leverage}x для {alert}")
             leverage = max_leverage
-            print(f"⚠️ Допустимое плечо для {alert}: до {max_leverage}x")
+            logger.warning(f"⚠️ Допустимое плечо для {alert}: до {max_leverage}x")
 
         open_futures_position(binance_client, alert.ticker, side, amount_usdt, leverage, stop_lose_pct)
 
-    print("Complete!")
+    logger.info("Complete!")
 
 

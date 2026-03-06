@@ -1,6 +1,8 @@
 import os
 import time
 
+from logger import *
+
 from binance.client import Client
 from dotenv import load_dotenv
 
@@ -17,16 +19,16 @@ def get_binance_client():
     client = Client(API_KEY, API_SECRET, demo=True)
 
     server_time = client.get_server_time()
-    print(f"Время на сервере Binance: {server_time}")
+    logger.info(f"Время на сервере Binance: {server_time}")
 
     account_info = client.get_account()
-    print(f"Статус аккаунта: {account_info['canTrade']}") 
+    logger.info(f"Статус аккаунта: {account_info['canTrade']}") 
 
     balance = client.get_asset_balance(asset='USDT')
-    print(f"Баланс USDT: {balance}")
+    logger.info(f"Баланс USDT: {balance}")
 
     ticker = client.get_symbol_ticker(symbol="BTCUSDT")
-    print(f"Текущая цена BTC/USDT: {ticker['price']}")
+    logger.info(f"Текущая цена BTC/USDT: {ticker['price']}")
 
     return client
 
@@ -68,7 +70,7 @@ def get_binance_all_available_futures_tickers(binance_client: Client) -> list:
         return sorted(active_tickers)  # возвращаем отсортированный список
         
     except Exception as e:
-        print(f"Ошибка при получении тикеров фьючерсов: {e}")
+        logger.error(f"Ошибка при получении тикеров фьючерсов: {e}")
         return []
     
 def get_open_futures_positions(binance_client: Client) -> list:
@@ -89,7 +91,7 @@ def get_open_futures_positions(binance_client: Client) -> list:
         return sorted(open_positions)  # возвращаем отсортированный список
         
     except Exception as e:
-        print(f"Ошибка при получении открытых позиций: {e}")
+        logger.error(f"Ошибка при получении открытых позиций: {e}")
         return []
 
 
@@ -106,7 +108,7 @@ def get_futures_step_size(binance_client: Client, symbol: str) -> float:
                     if filt['filterType'] == 'LOT_SIZE':
                         return float(filt['stepSize'])
         
-        print(f"Не найден фильтр LOT_SIZE для {symbol}")
+        logger.error(f"Не найден фильтр LOT_SIZE для {symbol}")
         return 0.0
         
     except Exception as e:
@@ -163,7 +165,7 @@ def set_futures_leverage(binance_client: Client, symbol: str, leverage: int) -> 
         return response == None
     
     except Exception as e:
-        print(f"❌ Ошибка при установке плеча для {symbol}: {e}")
+        logger.error(f"❌ Ошибка при установке плеча для {symbol}: {e}")
         return False
         
 
@@ -181,11 +183,11 @@ def open_futures_position(
     quantity: float
 
     try:
-        print("Starting openning order.")
+        logger.info("Starting openning order.")
 
         # 1. Устанавливаем плечо (не работает на демо счете)
         if not binance_client.demo:
-            print(f"* setup leverage: {leverage}")
+            logger.info(f"* setup leverage: {leverage}")
 
             binance_client.futures_change_leverage(
                 symbol=symbol,
@@ -198,10 +200,10 @@ def open_futures_position(
         currentTicker = binance_client.futures_symbol_ticker(symbol=symbol)
         current_price: float = float(currentTicker['price'])
         if not current_price:
-            print("Не удалось получить текущую цену")
+            logger.error("Не удалось получить текущую цену")
             return {}
 
-        print(f"* get price: {current_price}")
+        logger.info(f"* get price: {current_price}")
 
         quantity = calculate_quantity(binance_client, symbol, current_price, amount_usdt, leverage)
 
@@ -210,7 +212,7 @@ def open_futures_position(
 
         precigion_quantity = round(quantity, quantity_precision)
 
-        print(f"Вычилили quantity {precigion_quantity}.")
+        logger.info(f"Вычилили quantity {precigion_quantity}.")
 
         sell_price: float = 0
         take_profit: float = 0
@@ -232,7 +234,7 @@ def open_futures_position(
             type='MARKET',
             quantity= precigion_quantity
         )
-        print(f"Фьючерс открыт: {symbol} {side} {precigion_quantity} @ {amount_usdt}")
+        logger.info(f"Фьючерс открыт: {symbol} {side} {precigion_quantity} @ {amount_usdt}")
 
         # раскомментить если нужны тейк-профиты
         # set_futures_TP(binance_client, symbol, side, precigion_quantity, take_profit)
@@ -241,7 +243,7 @@ def open_futures_position(
         return order
     
     except Exception as e:
-        print(f"Ошибка при открытии позиции {symbol}: {e}")
+        logger.error(f"Ошибка при открытии позиции {symbol}: {e}")
         return {}
     
 def set_futures_TP(
@@ -252,7 +254,7 @@ def set_futures_TP(
     take_profit: float
 ):
     try:
-        print(f"* take_profit price: {take_profit}")
+        logger.info(f"* take_profit price: {take_profit}")
         take_order = binance_client.futures_create_order(
             symbol =  symbol,
             side = 'SELL' if side == 'BUY' else 'BUY',
@@ -262,10 +264,10 @@ def set_futures_TP(
             # reduceOnly=True,
             closePosition = 'true'
         )
-        print(f"TP установлен: {symbol} {side} {precigion_quantity} @ {take_profit}")
+        logger.info(f"TP установлен: {symbol} {side} {precigion_quantity} @ {take_profit}")
 
     except Exception as e:
-        print(f"Ошибка при установке TP для {symbol} {side} {precigion_quantity} @ {take_profit}: {e}")
+        logger.error(f"Ошибка при установке TP для {symbol} {side} {precigion_quantity} @ {take_profit}: {e}")
         return {}
     
 def set_futures_SL(
@@ -276,7 +278,7 @@ def set_futures_SL(
     stop_price: float
 ):
     try:
-        print(f"* stop_lose price: {stop_price}")
+        logger.info(f"* stop_lose price: {stop_price}")
         #print(f"Вычилили stop_lose quantity {stop_precigion_quantity}.")
 
         # 3. Размещаем стоп-лосс ордер
@@ -289,10 +291,10 @@ def set_futures_SL(
             # reduceOnly=True,
             closePosition = 'true'
         )
-        print(f"SL установлен: {symbol} {side} {precigion_quantity} @ {stop_price}")
+        logger.info(f"SL установлен: {symbol} {side} {precigion_quantity} @ {stop_price}")
             
     except Exception as e:
-        print(f"Ошибка при установке SL для {symbol} {side} {precigion_quantity} @ {stop_price}: {e}")
+        logger.error(f"Ошибка при установке SL для {symbol} {side} {precigion_quantity} @ {stop_price}: {e}")
         return {}
         
 def get_price_precision(
@@ -307,7 +309,7 @@ def get_price_precision(
             break
         
     if not symbol_info:
-        print(f"Не удалось получить информацию о символе {symbol}")
+        logger.error(f"Не удалось получить информацию о символе {symbol}")
         return 0
         
     price_precision = int(symbol_info['pricePrecision'])
@@ -325,7 +327,7 @@ def get_quantity_precision(
             break
         
     if not symbol_info:
-        print(f"Не удалось получить информацию о символе {symbol}")
+        logger.error(f"Не удалось получить информацию о символе {symbol}")
         return 0
         
     quantity_precision = int(symbol_info['quantityPrecision'])
@@ -343,7 +345,7 @@ def get_futures_sl_order(
         symbol=symbol, timestamp=int(time.time() * 1000)
     )
 
-    print(f"    * we have {len(open_orders)} orders in: {symbol}")
+    logger.info(f"    * we have {len(open_orders)} orders in: {symbol}")
 
     for i, order in enumerate(open_orders, start=1):
         if order.get("algoStatus") == "CANCELED":
@@ -354,7 +356,7 @@ def get_futures_sl_order(
             and order.get("algoType") in ("CONDITIONAL", "STOP_MARKET")
             and order.get("algoStatus") == "NEW"
         ):
-            print(f"   * found SL order #{i} for {symbol}")
+            logger.info(f"   * found SL order #{i} for {symbol}")
 
             return order
 
@@ -377,7 +379,7 @@ def move_stop_loss(
 
     new_stop_price_rounded = round(new_stop_price, price_precision)
     rounded_qty = round(quantity, quantity_precision)
-    print(f"    getting all opened algo order!")
+    logger.info(f"    getting all opened algo order!")
 
     # Если найден существующий стоп‑лосс – отменяем его
     open_orders = binance_client.futures_get_all_algo_orders(
@@ -386,7 +388,7 @@ def move_stop_loss(
     )
     stop_order_id = None
     stop_order_price = None
-    print(f"    * we have {len(open_orders)} orders in: {symbol}")
+    logger.info(f"    * we have {len(open_orders)} orders in: {symbol}")
 
     for i, order in enumerate(open_orders, 1):
 
@@ -400,7 +402,7 @@ def move_stop_loss(
             (order['algoType'] == 'CONDITIONAL' or order['algoType'] == 'STOP_MARKET' )and
             order['algoStatus'] == 'NEW'
         ):
-            print(f"   * we found exist SL order {len(open_orders)} orders in: {symbol}")
+            logger.info(f"   * we found exist SL order {len(open_orders)} orders in: {symbol}")
 
             stop_order_id = order['algoId']
             # Получаем текущую цену стоп-лосса
@@ -411,7 +413,7 @@ def move_stop_loss(
             break
 
     if stop_order_id:
-        print(f"    canceling old stop order: {stop_order_id}")
+        logger.info(f"    canceling old stop order: {stop_order_id}")
 
         # Округляем текущую цену стоп-лосса для сравнения
         if stop_order_price:
@@ -419,16 +421,16 @@ def move_stop_loss(
         else:
             stop_order_price_rounded = None
             
-        print(f"    Current stop price: {stop_order_price_rounded}")
-        print(f"    New stop price: {new_stop_price_rounded}")
+        logger.info(f"    Current stop price: {stop_order_price_rounded}")
+        logger.info(f"    New stop price: {new_stop_price_rounded}")
         
         # Проверяем, совпадают ли цены (с учетом округления)
         if stop_order_price_rounded is not None and stop_order_price_rounded == new_stop_price_rounded:
-            print(f"    ✓ Stop price is already at {new_stop_price_rounded}. No changes needed.")
+            logger.info(f"    ✓ Stop price is already at {new_stop_price_rounded}. No changes needed.")
             return {"status": "unchanged", "reason": "price_already_set"}
         
         # Если цены не совпадают, отменяем старый ордер
-        print(f"    Prices differ. Cancelling old SL order {stop_order_id}, name = {symbol}")
+        logger.info(f"    Prices differ. Cancelling old SL order {stop_order_id}, name = {symbol}")
         
         try:
             binance_client.futures_cancel_algo_order(
@@ -436,18 +438,18 @@ def move_stop_loss(
                 algoid=stop_order_id, 
                 timestamp=int(time.time() * 1000)
             )
-            print(f"    Cancelled old SL order {stop_order_id}")
+            logger.info(f"    Cancelled old SL order {stop_order_id}")
 
 
         except Exception as e:
-            print(f"❌ Ошибка перемещения SL для {symbol}: {e}")
+            logger.error(f"❌ Ошибка перемещения SL для {symbol}: {e}")
             return {}
         
     else:
-        print(f"    failed to remove old SL order {stop_order_id}")
+        logger.error(f"    failed to remove old SL order {stop_order_id}")
         #return {}
                 
-    print(f"    order id {stop_order_id}")
+    logger.info(f"    order id {stop_order_id}")
     set_futures_SL(binance_client, symbol, side, rounded_qty, new_stop_price_rounded)    
 
 

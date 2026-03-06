@@ -1,6 +1,8 @@
 import time
 import os
 
+from logger import *
+
 from logic import analyze_stop_loss, open_new_positions, check_available_position, get_position_grow, maximise_with_side, get_price_from_list
 from binance_utils import get_binance_client, get_binance_all_available_futures_tickers, get_open_futures_positions, open_futures_position, move_stop_loss, get_futures_sl_order
 from binance.client import Client
@@ -19,9 +21,9 @@ binance_open_tickers: List[str] = []
 all_ticker_prices: Dict
 
 def print_active_futures_tickers_simple(tickers_list: list):
-    print(f"\nАктивные USDT-фьючерсы ({len(tickers_list)} шт.):")
+    logger.info(f"\nАктивные USDT-фьючерсы ({len(tickers_list)} шт.):")
     for i, ticker in enumerate(tickers_list, 1):
-        print(f"{i:3}. {ticker}")
+        logger.info(f"{i:3}. {ticker}")
 
 def update_binance_data() -> bool:
     global binance_all_available_tickers 
@@ -38,10 +40,10 @@ def check_for_new_alerts() -> Optional[list[AlertRecord]]:
     alerts: list[AlertRecord] = takeAlerts()
 
     if not alerts or  len(alerts):
-        print("Новые сигналы от аналитического бота не найдены не найдены")
+        logger.error("Новые сигналы от аналитического бота не найдены не найдены")
         return []
     
-    print(f"Найдено {len(alerts)} уникальных тикеров.")
+    logger.info(f"Найдено {len(alerts)} уникальных тикеров.")
 
     return alerts
 
@@ -53,12 +55,12 @@ def check_open_orders(
     new_alerts: list[AlertRecord], 
     positions_info
 ):
-    print("-" * 50)
+    logger.info("-" * 50)
     for i, alert in enumerate(binance_open_tickers, 1):
         # Найти данные позиции по тикеру
         pos = next((p for p in positions_info if p['symbol'] == alert), None)
         if not pos:
-            print(f"--- analysing order {i}: {alert} – position info missing")
+            logger.warning(f"--- analysing order {i}: {alert} – position info missing")
             continue
  
         order: Optional[Dict] = get_futures_sl_order(binance_client, alert)
@@ -78,34 +80,34 @@ def check_open_orders(
         # Процент изменения от цены открытия
         pct_change = get_position_grow(entry_price, current_price)
 
-        print(f"--- analysing order {i}: {alert}")
-        print(f"    Entry price: {entry_price:.8f} | Current price: {current_price:.8f} | Current SL: {stop_order_price:.8f}")
-        print(f"    Position side: {side} | Quantity: {quantity:.6f}")
-        print(f"    breakEvenPrice: {breakEvenPrice} | Quantity: {quantity:.6f}")
-        print(f"    pct_change: {pct_change}")
+        logger.debug(f"--- analysing order {i}: {alert}")
+        logger.debug(f"    Entry price: {entry_price:.8f} | Current price: {current_price:.8f} | Current SL: {stop_order_price:.8f}")
+        logger.debug(f"    Position side: {side} | Quantity: {quantity:.6f}")
+        logger.debug(f"    breakEvenPrice: {breakEvenPrice} | Quantity: {quantity:.6f}")
+        logger.debug(f"    pct_change: {pct_change}")
 
         isMovable1 = analyze_stop_loss(pct_change, side, 3, 5)
 
         if isMovable1:
-            print("    we need to move position (3-5 signal).")
+            logger.info("    we need to move position (3-5 signal).")
 
             if (maximise_with_side(breakEvenPrice, stop_order_price, side)) == stop_order_price:
-                print("Текущий SL лучше, не двигаемся.")
+                logger.info("Текущий SL лучше, не двигаемся.")
                 continue
  
             move_stop_loss(binance_client, alert, side, quantity, breakEvenPrice)
-            print("    position moved.")
+            logger.info("    position moved.")
         else:
-            print("    No adjustment needed. (3-5 signal)")
+            logger.info("    No adjustment needed. (3-5 signal)")
             # return
 # -------------------------------------------------------------------------------------------------
-        print("-" * 50)
-        print("Анализ TP")
+        logger.info("-" * 50)
+        logger.info("Анализ TP")
 
         # Ищем объект AlertRecord с таким ticker
         alert_record = next((a for a in new_alerts if a.ticker == alert), None)
         if alert_record is None or alert_record.min_price is None or alert_record.max_price is None:
-            print(f"По паре {alert} нет аналитики, пропускаю....")
+            logger.info(f"По паре {alert} нет аналитики, пропускаю....")
             continue
 
         short_min_price = alert_record.min_price
@@ -122,20 +124,20 @@ def check_open_orders(
         # Проверка на >5%
         isMovable2 = analyze_stop_loss(pct_change, side, 5, 9999)
         if isMovable2:
-            print(f"Максимальная отметка движения: {max_ticker_price}")
-            print(f"Цена 30% движения: {new_stop_order_price}")
+            logger.info(f"Максимальная отметка движения: {max_ticker_price}")
+            logger.info(f"Цена 30% движения: {new_stop_order_price}")
 
             if (maximise_with_side(current_price, new_stop_order_price, side)) == new_stop_order_price:
-                print("Текущая цена меньше этой отметки, SL не двигается.")
+                logger.info("Текущая цена меньше этой отметки, SL не двигается.")
                 continue
  
             if (maximise_with_side(stop_order_price, new_stop_order_price, side)) != new_stop_order_price:
-                print("Текущий SL лучше, не двигаемся.")
+                logger.info("Текущий SL лучше, не двигаемся.")
                 continue
  
-            print("Ну тут можно двигать SL")
+            logger.info("Ну тут можно двигать SL")
 
-            print(f"    Moving stop‑loss to {new_stop_order_price:.8f}")
+            logger.info(f"    Moving stop‑loss to {new_stop_order_price:.8f}")
             move_stop_loss(
                 binance_client,
                 alert,
@@ -144,10 +146,10 @@ def check_open_orders(
                 new_stop_order_price
             )
         else:
-            print("    No adjustment needed.")
+            logger.info("    No adjustment needed.")
             
-        print("Анализ TP закончен")
-        print("-" * 50)
+        logger.info("Анализ TP закончен")
+        logger.info("-" * 50)
 
 
 def do_loop(binance_client):
@@ -156,19 +158,19 @@ def do_loop(binance_client):
     global all_ticker_prices
 
     if not update_binance_data():
-        print("❌   Problem with files. Stopping logic...")
+        logger.error("❌   Problem with files. Stopping logic...")
         return
     else:
-        print("  binance data updated")
+        logger.info("  binance data updated")
 
     all_ticker_prices = binance_client.futures_symbol_ticker()
 
     new_alerts: Optional[list[AlertRecord]] = check_for_new_alerts()
     if new_alerts is None:
-        print("❌   Problem with files. Stopping logic...")
+        logger.error("❌   Problem with files. Stopping logic...")
         return
     else:
-        print("  tickers updated")
+        logger.info("  tickers updated")
 
     available_poss: list[AlertRecord] = check_available_position(active_alerts, new_alerts, binance_open_tickers)
 
@@ -210,11 +212,11 @@ if __name__ == "__main__":
             elapsed = time.time() - start_time
             wait_time = max(0, 60 - elapsed)  # минимум 0 секунд
             
-            print(f"Function took {elapsed:.2f}s, waiting {wait_time:.2f}s")
+            logger.info(f"Function took {elapsed:.2f}s, waiting {wait_time:.2f}s")
             
             if wait_time > 0:
                 time.sleep(wait_time)
         
 
     except ValueError as e:
-        print(f"Ошибка: {e}")
+        logger.error(f"Ошибка: {e}")

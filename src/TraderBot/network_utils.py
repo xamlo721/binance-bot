@@ -1,6 +1,8 @@
 from bot_types import AlertRecord
 from typing import List
 
+from logger import *
+
 interprocess_buffer: list[AlertRecord] = []
 
 def takeAlerts() -> List[AlertRecord]:

@@ -328,9 +328,6 @@ def check_price_overlimit(klines: List[KlineRecord], aggregated_highs: dict[str,
         logger.error(f"Ошибка при обработке данных: {e}")
         return None
 
-
-
-
 # Пороговое значение (X раз)
 VOLUME_MULTIPLIER = 5.0
 

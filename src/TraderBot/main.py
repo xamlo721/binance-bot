@@ -1,7 +1,6 @@
 import time
 import os
 
-from ticker_utils import compare_tickers, print_comparison_results
 from logic import analyze_stop_loss, open_new_positions, check_available_position, get_position_grow, maximise_with_side, get_price_from_list
 from binance_utils import get_binance_client, get_binance_all_available_futures_tickers, get_open_futures_positions, open_futures_position, move_stop_loss, get_futures_sl_order
 from binance.client import Client

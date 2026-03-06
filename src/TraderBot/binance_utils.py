@@ -7,8 +7,6 @@ from dotenv import load_dotenv
 from typing import List, Optional
 from typing import Dict
 
-
-
 def get_binance_client():
 
     load_dotenv()
@@ -47,8 +45,6 @@ def setup_cross_margin_type(binance_client: Client, symbol):
         recvWindow=30000, 
         timestamp=int(time.time() * 1000)
     )
-
-
 
 def get_binance_all_available_futures_tickers(binance_client: Client) -> list:
     """
@@ -335,7 +331,6 @@ def get_quantity_precision(
     quantity_precision = int(symbol_info['quantityPrecision'])
     return quantity_precision
 
-
 def get_futures_sl_order(
     binance_client: "Client",
     symbol: str,
@@ -364,7 +359,6 @@ def get_futures_sl_order(
             return order
 
     return None
-
 
 def move_stop_loss(
     binance_client: Client,

@@ -1,8 +1,6 @@
 from binance_utils import open_futures_position
 from binance.client import Client
 
-from ticker_utils import compare_tickers, print_comparison_results
-
 from typing import List
 from bot_types import AlertRecord
 

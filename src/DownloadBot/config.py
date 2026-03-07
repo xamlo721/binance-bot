@@ -1,7 +1,3 @@
-import os
-
-# Max файлов в папке
-MINUTE_CANDLES_LIMIT = 1440
 
 BINANCE_API_LIMIT: int = 800 #1200
 THREAD_POOL_SIZE: int = 30 # 30

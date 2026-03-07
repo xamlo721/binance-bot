@@ -4,7 +4,7 @@ import aiohttp
 import asyncio
 
 from logger import logger
-from AnalyticsBot.config import *
+from DownloadBot.config import *
 
 from datetime import datetime
 
@@ -78,146 +78,67 @@ def get_trading_symbols():
     except Exception as e:
         logger.error(f"Ошибка при получении списка тикеров: {str(e)}")
         return []
+
+async def fetch_klines_for_symbols(
+    session: aiohttp.ClientSession,
+    symbols: List[str],
+    count: int = 1,
+    end_timestamp: Optional[int] = None,
+    max_concurrent: int = THREAD_POOL_SIZE
+) -> List[List[KlineRecord]]:
+    """
+    Загружает `count` минутных свечей для всех тикеров.
     
-
-async def fetch_ticker_1m_volumes(session, symbol, limiter, candleDepth: int = 1) -> KlineRecord | None:
-    """Асинхронное получение данных для одного тикера с ограничением"""
-    await limiter.wait_if_needed()
+    Args:
+        session: aiohttp ClientSession
+        symbols: список тикеров
+        count: количество минут (по умолчанию 1)
+        end_timestamp: конечная метка времени в мс. Если None → текущая завершённая минута - 1 сек.
+        max_concurrent: макс. параллельных запросов
     
-    current_time = int(time.time() * 1000)
-    end_time = current_time - (current_time % 60000) - 1000
-    
-    url = "https://fapi.binance.com/fapi/v1/klines"
-    params = {
-        'symbol': symbol,
-        'interval': '1m',
-        'limit': candleDepth,
-        'endTime': end_time
-    }
-    
-    try:
-        async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as response:
+    Returns:
+        List[List[KlineRecord]]: список по минутам, где каждая минута — список свечей тикеров
+    """
+    if count <= 0:
+        raise ValueError("count must be positive")
 
-            if response.status == 200:
-                data = await response.json()
+    # Авто-расчёт end_timestamp
+    if end_timestamp is None:
+        now_ms = int(time.time() * 1000)
+        end_timestamp = now_ms - (now_ms % 60000) - 1
 
-                if data and len(data) > 0:
-                    kline = data[0]
-                    close_time = kline[6]
+    semaphore = asyncio.Semaphore(min(max_concurrent, 50))
+    limiter = BinanceRateLimiter(requests_per_minute=BINANCE_API_LIMIT)
 
-                    if close_time < current_time:
+    tasks = []
+    for symbol in symbols:
+        task = asyncio.create_task(
+            fetch_ticker_1m_volumes_for_time(session, symbol, count, limiter, end_timestamp)
+        )
+        tasks.append(task)
 
-                        # Структура, согласно документации
-                        # https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Kline-Candlestick-Data
-                        return KlineRecord(
-                            symbol=symbol,
-                            open_time=kline[0],
-                            open=float(kline[1]),
-                            high=float(kline[2]),
-                            low=float(kline[3]),
-                            close=float(kline[4]),
-                            volume=float(kline[5]),
-                            close_time=int(kline[6]),
-                            quote_assets_volume=float(kline[7]),
-                            num_of_trades=kline[8],
-                            taker_buy_base_volume=float(kline[9]),
-                            taker_buy_quote_volume=float(kline[10])
-                        )
-                    
-            elif response.status == 429:
-                logger.error(f"Лимит запросов превышен для {symbol}. Статус 429")
-                # Дополнительное ожидание при 429 ошибке
-                await asyncio.sleep(5)
-
-            else:
-                logger.error(f"Ошибка HTTP {response.status} для {symbol}")
-                await asyncio.sleep(5)
-                
-    except asyncio.TimeoutError:
-        logger.error(f"Таймаут для {symbol}")
-
-    except Exception as e:
-        logger.error(f"Ошибка для {symbol}: {str(e)}")
-    
-    return None
-
-async def fetch_all_tickers_volumes(symbols, countDepth: int, max_concurrent=THREAD_POOL_SIZE):
-    """Асинхронное получение объемов для всех тикеров с ограничением"""
-    # Уменьшаем max_concurrent для соблюдения лимитов
-    max_concurrent = min(max_concurrent, 50)
-    semaphore = asyncio.Semaphore(max_concurrent)
-    limiter = BinanceRateLimiter(requests_per_minute=800)
-    
-    async with aiohttp.ClientSession() as session:
-        tasks = []
-        for symbol in symbols:
-            task = asyncio.create_task(
-                _fetch_with_limits(session, symbol, semaphore, limiter, countDepth, fetch_ticker_1m_volumes)
-            )
-            tasks.append(task)
-        
-        results = []
-        completed = 0
-        for task in asyncio.as_completed(tasks):
+    # Выполняем и собираем
+    tickers_data: List[List[KlineRecord]] = []
+    for task in asyncio.as_completed(tasks):
+        try:
             result = await task
             if result:
-                results.append(result)
-            completed += 1
-            if completed % 500 == 0:
-                logger.info(f"Обработано {completed}/{len(symbols)} тикеров")
-        
-        return results
-
-async def _fetch_with_limits(session, symbol, count, semaphore, limiter, fetch_func, *args, **kwargs):
-    """Вспомогательная функция для выполнения запросов с ограничениями"""
-    async with semaphore:
-        return await fetch_func(session, symbol, count,  limiter, *args, **kwargs)
-
-async def fetch_all_tickers_volumes_for_time(symbols, count: int, end_timestamp, max_concurrent: int = THREAD_POOL_SIZE) -> List[List[KlineRecord]]:
-    """Асинхронное получение данных для всех тикеров для конкретного времени с ограничением"""
-    # Для исторических данных уменьшаем параллельность
-    max_concurrent = min(max_concurrent, THREAD_POOL_SIZE)
-    semaphore = asyncio.Semaphore(max_concurrent)
-    limiter = BinanceRateLimiter(requests_per_minute=BINANCE_API_LIMIT)
-    
-    async with aiohttp.ClientSession() as session:
-        tasks = []
-        for symbol in symbols:
-            task = asyncio.create_task(
-                _fetch_with_limits(
-                    session, 
-                    symbol, 
-                    count, 
-                    semaphore, 
-                    limiter, 
-                    fetch_ticker_1m_volumes_for_time, end_timestamp)
-            )
-            tasks.append(task)
-        
-        tickers_data: List[List[KlineRecord]] = []
-        completed = 0
-        for task in asyncio.as_completed(tasks):
-            result: List[KlineRecord] = await task
-            if result:
                 tickers_data.append(result)
-            completed += 1
-            if completed % 300 == 0:
-                logger.info(f"Обработано {completed}/{len(symbols)} тикеров")
-            
-            # Небольшая задержка между задачами
-            if completed % 100 == 0:
-                await asyncio.sleep(0.5)
-                # Транспонируем в список минут
-                
-        minutes_data: List[List[KlineRecord]] = [[] for _ in range(count)]
-        
-        for ticker_candles in tickers_data:
-            for minute_index, candle in enumerate(ticker_candles):
-                if minute_index < count:
-                    minutes_data[minute_index].append(candle)
-        
-        logger.info(f"Сформировано {len(minutes_data)} минут по {len(minutes_data[0]) if minutes_data else 0} тикеров")
-        return minutes_data
+        except Exception as e:
+            logger.error(f"Ошибка при загрузке данных: {e}")
+
+    # Транспонируем: [tickers][minutes] → [minutes][tickers]
+    if not tickers_data:
+        return [[] for _ in range(count)]
+
+    minutes_data: List[List[KlineRecord]] = [[] for _ in range(count)]
+    for ticker_candles in tickers_data:
+        for i, candle in enumerate(ticker_candles):
+            if i < count:
+                minutes_data[i].append(candle)
+
+    logger.info(f"Загружено {len(minutes_data)} минут по {len(minutes_data[0])} тикерам")
+    return minutes_data
 
 async def fetch_ticker_1m_volumes_for_time(session, symbol, count: int, limiter, end_timestamp: int) -> list[KlineRecord] | None:
     """Асинхронное получение данных для одного тикера для конкретного времени"""

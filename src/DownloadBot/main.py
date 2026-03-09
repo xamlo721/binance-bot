@@ -84,12 +84,15 @@ async def fetch_candles(session: aiohttp.ClientSession, symbols: list[str], coun
 
     # Запрос к Binance: все тикеры за указанное количество минут до `end_timestamp`
     period_klines = await fetch_klines_for_symbols(session, symbols, count, end_timestamp)
+    logger.info(f"fetch вернул {len(period_klines)} отметок")
 
+    logger.info(f"До сохранения там {len(global_data)} отметок")
     # Сохраняем свечи по абсолютному номеру минуты (timestamp // 60000)
     for ticker_candles in period_klines:
         for candle in ticker_candles:
             minute_key = int(candle.open_time // 60000)   # абсолютный номер минуты
             global_data.setdefault(minute_key, []).append(candle)
+    logger.info(f"После сохранения там {len(global_data)} отметок")
 
 
 def cleanup_storage(storage_imit: int):
@@ -137,7 +140,6 @@ async def main_loop():
     """
     
     async with aiohttp.ClientSession() as session:  # ← создаём сессию
-
         
         logger.info(f"Обновляем список тикеров")
         symbols = get_trading_symbols()
@@ -145,7 +147,10 @@ async def main_loop():
             logger.error("Не удалось получить список тикеров")
             return
         logger.info(f"✅ Получено {len(symbols)} тикеров seconds")
-
+        
+        # Берём только первые 10 тикеров (для дебага)
+        symbols = symbols[:10]
+        
         # Скачиваем архивные свечи перед запуском        
         total_requests = len(symbols) * ((MAX_CACHED_CANDLES + MAX_CANDLES_PER_REQUEST - 1) // MAX_CANDLES_PER_REQUEST)
         # Оценка по весу (средний вес 10)
@@ -165,7 +170,7 @@ async def main_loop():
             now_ms = int(time.time() * 1000)
 
             missing = check_space(now_ms)
-            if missing > 0:
+            if missing > 1:
                 logger.info(f"Обнаружено пропущенных минут: {missing}. Догоняем...")
                 await fetch_candles(session, symbols, missing)
             else:

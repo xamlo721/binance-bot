@@ -276,4 +276,6 @@ async def fetch_klines_for_symbols(
                 minutes_data[i].append(candle)
 
     logger.info(f"Загружено {len(minutes_data)} минут по {len(minutes_data[0])} тикерам")
+    non_empty = sum(1 for m in minutes_data if m)
+    logger.info(f"Реально загружено {non_empty} минут (из {count})")
     return minutes_data

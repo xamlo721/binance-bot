@@ -1,11 +1,23 @@
 import time
-import os
 
 from logger import *
 
-from logic import analyze_stop_loss, open_new_positions, check_available_position, get_position_grow, maximise_with_side, get_price_from_list
-from binance_utils import get_binance_client, get_binance_all_available_futures_tickers, get_open_futures_positions, open_futures_position, move_stop_loss, get_futures_sl_order
+from logic import analyze_stop_loss
+from logic import open_new_positions
+from logic import check_available_position
+from logic import get_position_grow
+from logic import maximise_with_side
+from logic import get_price_from_list
+
+from binance_utils import get_binance_client
+from binance_utils import get_binance_all_available_futures_tickers
+from binance_utils import get_open_futures_positions
+from binance_utils import open_futures_position
+from binance_utils import move_stop_loss
+from binance_utils import get_futures_sl_order
+
 from binance.client import Client
+
 from typing import List
 from typing import Dict
 from typing import Optional

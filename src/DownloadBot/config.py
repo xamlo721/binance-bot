@@ -9,3 +9,6 @@ BINANCE_API_REQUEST_LIMIT: int = 800
 BINANCE_API_WEIGHT_LIMIT: int = 2000
 # Количество потоков, участвующих в запросе сервера
 THREAD_POOL_SIZE: int = 32 # 30
+# UDP IP, PORT
+DOWNLOADER_UDP_IP: str = "127.0.0.1"
+DOWNLOADER_UDP_PORT: int = 58001

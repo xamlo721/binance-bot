@@ -1,3 +1,11 @@
 
-BINANCE_API_LIMIT: int = 800 #1200
-THREAD_POOL_SIZE: int = 30 # 30
+# Количество свечей, хранящихся в кеше
+MAX_CACHED_CANDLES: int = 2880  # 
+# Лимит Binance для klines endpoint
+MAX_CANDLES_PER_REQUEST: int = 1500
+# Binance API limit requests per minute = 1200 
+BINANCE_API_REQUEST_LIMIT: int = 800 
+# Binance API limit wight per minute = 2400
+BINANCE_API_WEIGHT_LIMIT: int = 2000
+# Количество потоков, участвующих в запросе сервера
+THREAD_POOL_SIZE: int = 32 # 30

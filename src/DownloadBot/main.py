@@ -25,7 +25,8 @@ from binance_utils import fetch_klines_for_symbols
 
 from bot_types import KlineRecord
 
-from logger import logger
+from logger import *
+from config import *
 
 # Список всех отметок за MINUTE_CANDLES_LIMIT минут 
 #                   <НОМЕР_МИНУТЫ List<МИНУТНАЯ_ЗАПИСЬ>>
@@ -72,58 +73,63 @@ def is_storage_consistent(candle_dict: dict[int, list[KlineRecord]]) -> bool:
 
     return True
 
-async def update_archive_candles(session: aiohttp.ClientSession, symbols: list[str], count: int = 1440) -> None:
+async def fetch_candles(session: aiohttp.ClientSession, symbols: list[str], count: int = 1440) -> None:
     """
     Получаем последние `count` минут (по умолчанию 24 часа) и сохраняем их в глобальном хранилище.
     """
     # Текущий момент
-    end_timestamp = int(time.time() * 1000)
+    now_timestamp = int(time.time() * 1000)
+    # Последняя завершенная минута
+    end_timestamp = now_timestamp - (now_timestamp % 60000) - 1
 
     # Запрос к Binance: все тикеры за указанное количество минут до `end_timestamp`
-    period_candles = await fetch_klines_for_symbols(session, symbols, count, end_timestamp)
+    period_klines = await fetch_klines_for_symbols(session, symbols, count, end_timestamp)
 
     # Сохраняем свечи по абсолютному номеру минуты (timestamp // 60000)
-    for ticker_candles in period_candles:
+    for ticker_candles in period_klines:
         for candle in ticker_candles:
             minute_key = int(candle.open_time // 60000)   # абсолютный номер минуты
             global_data.setdefault(minute_key, []).append(candle)
 
-    # Убираем старые данные – оставляем только последние `count` минут
-    if len(global_data) > count:
-        sorted_keys = sorted(global_data.keys())
-        for key in sorted_keys[:len(global_data) - count]:
-            del global_data[key]
 
-async def fetch_new_candles(session: aiohttp.ClientSession, symbols: list[str]) -> None:
-    """
-    Скачиваем одну минутную свечу для каждого тикера и добавляем её в глобальное хранилище.
-    """
-    klines = await fetch_klines_for_symbols(session, symbols, 1, max_concurrent=200)
-
-    for i, minute_candles in enumerate(klines):
-
-        if not minute_candles:
-            logger.error(f"Получили невалидные данные для {_format_ts(i)} по какому-то тикеру")
-            continue
-
-        # Берём время первой свечи в минуте (или последней — зависит от логики)
-        first_candle = minute_candles[0]
-        minute_key = int(first_candle.close_time // 60000)
-        
-        for candle in minute_candles:
-            global_data.setdefault(minute_key, []).append(candle)
-
+def cleanup_storage(storage_imit: int):
     # Убираем старые данные – оставляем только последние 1440 минут
-    if len(global_data) > 1440:
+    if len(global_data) > storage_imit:
         sorted_keys = sorted(global_data.keys())
-        for key in sorted_keys[:len(global_data) - 1440]:
+        for key in sorted_keys[:len(global_data) - storage_imit]:
             del global_data[key]
 
     if (is_storage_consistent(global_data)):
-        logger.info(f"✅ Хранилище консистентно. Период хранения с {_format_ts(list(global_data.keys())[0])} по {_format_ts(list(global_data.keys())[-1])}")
+        logger.info(f"✅ Хранилище консистентно. Период хранения с"
+                    f" {_format_ts(list(global_data.keys())[0] * 60000)} по {_format_ts(list(global_data.keys())[-1] * 60000)}")
     else:
-        logger.error(f"❌ Хранилище неконсистентно. Период хранения с {_format_ts(list(global_data.keys())[0])} по {_format_ts(list(global_data.keys())[-1])}")
+        logger.error(f"❌ Хранилище неконсистентно. Период хранения с"
+                     f" {_format_ts(list(global_data.keys())[0] * 60000)} по {_format_ts(list(global_data.keys())[-1] * 60000)}")
+        
 
+def check_space(now_ms: int) -> int:
+    """
+    Определяет количество пропущенных минут в хранилище global_data.
+    
+    Args:
+        now_ms: текущее время в миллисекундах.
+    
+    Returns:
+        int: сколько минут нужно догрузить, чтобы хранилище содержало все завершённые
+             минуты до текущего момента включительно.
+    """
+    if not global_data:
+        # Хранилище пусто, нужно загрузить MAX_CACHED_CANDLES минут
+        return MAX_CACHED_CANDLES
+
+    # Последняя завершенная минута
+    last_completed_minute = (now_ms - (now_ms % 60000) - 1) // 60000
+    last_stored_minute = max(global_data.keys())
+
+    if last_stored_minute >= last_completed_minute:
+        return 0
+    else:
+        return last_completed_minute - last_stored_minute
 
 async def main_loop():
     """
@@ -131,25 +137,45 @@ async def main_loop():
     """
     
     async with aiohttp.ClientSession() as session:  # ← создаём сессию
+
+        
+        logger.info(f"Обновляем список тикеров")
         symbols = get_trading_symbols()
         if not symbols:
             logger.error("Не удалось получить список тикеров")
             return
-        
-        # Берём только первые 10 тикеров (для дебага)
-        symbols = symbols[:10]
-        
-        # Скачиваем архивные свечи перед запуском
-        await update_archive_candles(session, symbols, count=1440)
+        logger.info(f"✅ Получено {len(symbols)} тикеров seconds")
+
+        # Скачиваем архивные свечи перед запуском        
+        total_requests = len(symbols) * ((MAX_CACHED_CANDLES + MAX_CANDLES_PER_REQUEST - 1) // MAX_CANDLES_PER_REQUEST)
+        # Оценка по весу (средний вес 10)
+        estimated_min_by_weight = (10 * total_requests) / BINANCE_API_WEIGHT_LIMIT
+        # Оценка по количеству запросов
+        estimated_min_by_count = total_requests / BINANCE_API_REQUEST_LIMIT
+        # Берём максимум как пессимистичную оценку
+        estimated_minutes = max(estimated_min_by_weight, estimated_min_by_count)
+
+        logger.info(f"Скачиваем {MAX_CACHED_CANDLES} минутных отметок по каждому тикеру. .")
+        logger.info(f"Всего {MAX_CACHED_CANDLES * len(symbols)} свечей. Понадобится {total_requests} запросов.")
+        logger.info(f"Ориентировочно это займет {estimated_minutes * 60} секунд при соблюдении лимитов Binance.")
+        await fetch_candles(session, symbols, count = MAX_CACHED_CANDLES)
 
         while True:
-            start_time = time.time()
-            
-            # Fetch new candle
-            await fetch_new_candles(session, symbols)
+            tick_start_time = time.time()
+            now_ms = int(time.time() * 1000)
+
+            missing = check_space(now_ms)
+            if missing > 0:
+                logger.info(f"Обнаружено пропущенных минут: {missing}. Догоняем...")
+                await fetch_candles(session, symbols, missing)
+            else:
+                logger.info("Обновляем свечи за текущую минуту.")
+                await fetch_candles(session, symbols, 1)
+
+            cleanup_storage(MAX_CACHED_CANDLES)
 
             # Вычисляем сколько осталось ждать
-            elapsed = time.time() - start_time
+            elapsed = time.time() - tick_start_time
             wait_time = max(0, 60 - elapsed)  # минимум 0 секунд
             logger.info(f"✅ Updated {len(global_data)} tickers for {elapsed:.2f} seconds")
             await asyncio.sleep(wait_time)

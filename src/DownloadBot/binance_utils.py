@@ -16,47 +16,8 @@ from typing import Optional
 from typing import Callable
 from typing import Any
 
-# ============== Rate Limiter для Binance API ==============
+from urllib.parse import urlencode
 
-class BinanceRateLimiter:
-    """Ограничитель запросов для Binance API"""
-    
-    def __init__(self, requests_per_minute: int = BINANCE_API_LIMIT):
-        """
-        Args:
-            requests_per_minute: Максимальное количество запросов в минуту (Binance: 1200)
-        """
-        self.requests_per_minute = requests_per_minute
-        self.request_timestamps = deque()
-        self._lock = asyncio.Lock()
-        
-    async def wait_if_needed(self):
-        """Ожидает, если превышен лимит запросов"""
-        async with self._lock:
-            now = time.time()
-            
-            # Удаляем запросы старше 1 минуты
-            while self.request_timestamps and self.request_timestamps[0] < now - 60:
-                self.request_timestamps.popleft()
-            
-            # Если достигнут лимит, ждем
-            if len(self.request_timestamps) >= self.requests_per_minute:
-                oldest = self.request_timestamps[0]
-                wait_time = 60 - (now - oldest)
-                if wait_time > 0:
-                    logger.warning(f"Достигнут лимит запросов Binance. Ожидание {wait_time:.2f} секунд...")
-                    await asyncio.sleep(wait_time)
-                    
-                    # После ожидания очищаем старые записи
-                    now = time.time()
-                    while self.request_timestamps and self.request_timestamps[0] < now - 60:
-                        self.request_timestamps.popleft()
-            
-            # Добавляем текущий запрос
-            self.request_timestamps.append(now)
-
-
-# ============== Модифицированные функции с ограничением ==============
 
 def get_trading_symbols():
     """Получение списка торгующихся тикеров"""
@@ -72,12 +33,189 @@ def get_trading_symbols():
                 symbol_name = symbol_info['symbol']
                 if not symbol_name.startswith("USDC") and not symbol_name.endswith("USDC"):
                     symbols.append(symbol_name)
-                #symbols.append(symbol_info['symbol'])
         
         return symbols
     except Exception as e:
         logger.error(f"Ошибка при получении списка тикеров: {str(e)}")
         return []
+
+# ============== Rate Limiter для Binance API ==============
+
+def get_kline_weight(limit: int) -> int:
+    if limit <= 100:
+        return 1
+    elif limit <= 500:
+        return 2
+    elif limit <= 1000:
+        return 5
+    else:
+        return 10
+    
+class BinanceRateLimiter:
+    """Ограничитель запросов для Binance API"""
+    
+    def __init__(self, requests_per_minute: int, requests_weight_per_minute: int):
+        """
+        Args:
+            requests_per_minute: Максимальное количество запросов в минуту (Binance: 1200)
+        """
+        self.weight_limit = requests_weight_per_minute
+        self.requests_limit = requests_per_minute
+        self.requests = deque()
+        self._lock = asyncio.Lock()
+        
+    async def wait_if_needed(self, weight: int = 1):
+        """Ожидает, если превышен лимит запросов"""
+        async with self._lock:
+            now = time.time()
+            
+            # Удаляем запросы старше 1 минуты
+            while self.requests and self.requests[0][0] < now - 60:
+                self.requests.popleft()
+            
+            # Текущий вес запросов
+            total_weight = sum(w for _, w in self.requests)
+            
+            # Если достигнут лимит, ждем
+            while total_weight + weight > self.weight_limit or len(self.requests) >= self.requests_limit:
+                # Ждём, пока освободится достаточно веса
+                # Для простоты ждём до истечения самого старого запроса
+
+                if not self.requests:
+                    # Очередь пуста, но лимит формально превышен (маловероятно) – просто ждём 1 сек
+                    await asyncio.sleep(1)
+                    now = time.time()
+                    continue
+
+                # Ждём, пока истечёт самый старый запрос
+                oldest = self.requests[0][0]
+                wait_time = 60 - (now - oldest)
+
+                if wait_time > 0:
+                    logger.warning(f"Достигнут лимит запросов Binance. Ожидание {wait_time:.2f} секунд...")
+                    await asyncio.sleep(wait_time)
+                    
+                # После ожидания очищаем старые записи
+                now = time.time()
+                while self.requests and self.requests[0][0] < now - 60:
+                    self.requests.popleft()
+                        
+                # Пересчитываем общий вес для следующей итерации цикла
+                total_weight = sum(w for _, w in self.requests)
+            
+            # Добавляем текущий запрос
+            self.requests.append((time.time(), weight))
+
+
+# ============== Модифицированные функции с ограничением ==============
+
+
+async def fetch_klines_paginated(session: aiohttp.ClientSession, symbol: str, count: int, end_timestamp: int, limiter, semaphore: asyncio.Semaphore) -> list[KlineRecord] | None:
+    """
+    Получает исторические свечи с пагинацией (максимум 1500 за запрос).
+    
+    Args:
+        session: aiohttp ClientSession
+        symbol: тикер
+        count: общее количество требуемых минут
+        end_timestamp: конечная метка времени в мс
+        limiter: BinanceRateLimiter для контроля лимитов
+    
+    Returns:
+        List[KlineRecord]: список свечей
+    """
+    async with semaphore:  # ← применяем семафор к каждому запросу!
+
+        if count <= 0:
+            raise ValueError("count must be positive")
+        
+
+        # Авто-расчёт end_timestamp
+        if end_timestamp is None:
+            now_ms = int(time.time() * 1000)
+            end_timestamp = now_ms - (now_ms % 60000) - 1    
+            
+        all_candles: List[KlineRecord] = []
+        current_end = end_timestamp
+        max_per_request = MAX_CANDLES_PER_REQUEST  # Лимит Binance для одного запроса
+
+        while len(all_candles) < count:
+            remaining = count - len(all_candles)
+            request_count = min(remaining, max_per_request)
+
+            if limiter:
+                # Выясняем вес запроса
+                request_weight: int = get_kline_weight(request_count)
+                # Ждем разрешения от rate limiter
+                await limiter.wait_if_needed(request_weight)
+
+                url = "https://fapi.binance.com/fapi/v1/klines"
+                params = {
+                    'symbol': symbol,
+                    'interval': '1m',
+                    'limit': request_count,
+                    'endTime': current_end
+                }
+
+                # Формируем полный URL для логирования
+                full_url = f"{url}?{urlencode(params)}"
+                logger.debug(f"Запрос к Binance API: {full_url}")    
+
+                try:
+                    async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                        if response.status == 200:
+                            data = await response.json()
+
+                            response_size = len(str(data))
+                            logger.debug(f"🟢 ДАННЫЕ: Получено {len(data)} свечей, размер ответа ~{response_size} байт")
+
+                            if data and len(data) > 0:
+                                for kline in data:
+                                    # Структура, согласно документации
+                                    # https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Kline-Candlestick-Data
+                                    candle = KlineRecord(
+                                        symbol=symbol,
+                                        open_time=kline[0],
+                                        open=float(kline[1]),
+                                        high=float(kline[2]),
+                                        low=float(kline[3]),
+                                        close=float(kline[4]),
+                                        volume=float(kline[5]),
+                                        close_time=int(kline[6]),
+                                        quote_assets_volume=float(kline[7]),
+                                        num_of_trades=kline[8],
+                                        taker_buy_base_volume=float(kline[9]),
+                                        taker_buy_quote_volume=float(kline[10])
+                                    )
+                                    all_candles.append(candle)
+                                logger.debug(f"Загружено {len(all_candles)} свечей для {symbol}")
+
+                                # Обновляем end_timestamp для следующего запроса
+                                if data:
+                                    current_end = int(data[-1][0] / 1000 * 1000 - 1)  # начало предыдущей минуты
+
+                        else:
+                            logger.error(f"❌ Ошибка HTTP {response.status} для {symbol}")
+                            await asyncio.sleep(1)
+                            break
+                            
+                except Exception as e:
+                    logger.error(f"❌ Ошибка для {symbol}: {str(e)}")
+                    break
+
+        # Логируем первую и последнюю свечу полного диапазона (после пагинации)
+        if all_candles:
+            first_kline = all_candles[0]
+            last_kline = all_candles[-1]
+
+            first_time = datetime.fromtimestamp(first_kline.open_time / 1000).strftime('%Y-%m-%d %H:%M:%S')
+            last_time = datetime.fromtimestamp(last_kline.open_time / 1000).strftime('%Y-%m-%d %H:%M:%S')
+
+            logger.debug(f"📊 ДИАПАЗОН: {symbol} с {first_time} по {last_time} ({len(all_candles)} свечей)")
+        else:
+            logger.warning(f"⚠️ Не получено данных для {symbol}")
+
+        return all_candles
 
 async def fetch_klines_for_symbols(
     session: aiohttp.ClientSession,
@@ -108,12 +246,12 @@ async def fetch_klines_for_symbols(
         end_timestamp = now_ms - (now_ms % 60000) - 1
 
     semaphore = asyncio.Semaphore(min(max_concurrent, 50))
-    limiter = BinanceRateLimiter(requests_per_minute=BINANCE_API_LIMIT)
+    limiter = BinanceRateLimiter(BINANCE_API_REQUEST_LIMIT, BINANCE_API_WEIGHT_LIMIT)
 
     tasks = []
     for symbol in symbols:
         task = asyncio.create_task(
-            fetch_ticker_1m_volumes_for_time(session, symbol, count, limiter, end_timestamp)
+            fetch_klines_paginated(session, symbol, count, end_timestamp, limiter, semaphore)
         )
         tasks.append(task)
 
@@ -139,71 +277,3 @@ async def fetch_klines_for_symbols(
 
     logger.info(f"Загружено {len(minutes_data)} минут по {len(minutes_data[0])} тикерам")
     return minutes_data
-
-async def fetch_ticker_1m_volumes_for_time(session, symbol, count: int, limiter, end_timestamp: int) -> list[KlineRecord] | None:
-    """Асинхронное получение данных для одного тикера для конкретного времени"""
-    await limiter.wait_if_needed()  # Ждем разрешения от rate limiter
-
-    url = "https://fapi.binance.com/fapi/v1/klines"
-    params = {
-        'symbol': symbol,
-        'interval': '1m',
-        'limit': count,
-        'endTime': end_timestamp
-    }
-
-        # Логирование запроса
-    # Формируем полный URL для логирования
-    from urllib.parse import urlencode
-    full_url = f"{url}?{urlencode(params)}"
-    logger.debug(f"Запрос к Binance API: {full_url}")    
-
-    try:
-        async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as response:
-            if response.status == 200:
-                data = await response.json()
-
-                response_size = len(str(data))
-                logger.debug(f"🟢 ДАННЫЕ: Получено {len(data)} свечей, размер ответа ~{response_size} байт")
-
-                if data and len(data) > 0:
-
-                        # Логируем первую и последнюю свечу для отладки
-                    first_kline = data[0]
-                    last_kline = data[-1]
-
-                    first_time = datetime.fromtimestamp(first_kline[0] / 1000).strftime('%Y-%m-%d %H:%M:%S')
-                    last_time = datetime.fromtimestamp(last_kline[0] / 1000).strftime('%Y-%m-%d %H:%M:%S')
-
-                    logger.debug(f"📊 ДИАПАЗОН: {symbol} с {first_time} по {last_time} ({len(data)} свечей)")
-                    
-                    candles = []
-                    for kline in data:
-                        # Структура, согласно документации
-                        # https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Kline-Candlestick-Data
-                        candle = KlineRecord(
-                            symbol=symbol,
-                            open_time=kline[0],
-                            open=float(kline[1]),
-                            high=float(kline[2]),
-                            low=float(kline[3]),
-                            close=float(kline[4]),
-                            volume=float(kline[5]),
-                            close_time=int(kline[6]),
-                            quote_assets_volume=float(kline[7]),
-                            num_of_trades=kline[8],
-                            taker_buy_base_volume=float(kline[9]),
-                            taker_buy_quote_volume=float(kline[10])
-                        )
-                        candles.append(candle)
-                    logger.debug(f"Загружено {len(candles)} свечей для {symbol}")
-                    return candles
-
-            else:
-                logger.error(f"❌ Ошибка HTTP {response.status} для {symbol}")
-                await asyncio.sleep(1)
-                
-    except Exception as e:
-        logger.error(f"❌ Ошибка для {symbol}: {str(e)}")
-    
-    return None

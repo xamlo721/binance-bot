@@ -27,6 +27,7 @@ from bot_types import KlineRecord
 
 from logger import *
 from config import *
+from udp_server import *
 
 # Список всех отметок за MINUTE_CANDLES_LIMIT минут 
 #                   <НОМЕР_МИНУТЫ List<МИНУТНАЯ_ЗАПИСЬ>>
@@ -93,7 +94,6 @@ async def fetch_candles(session: aiohttp.ClientSession, symbols: list[str], coun
             minute_key = int(candle.open_time // 60000)   # абсолютный номер минуты
             global_data.setdefault(minute_key, []).append(candle)
     logger.info(f"После сохранения там {len(global_data)} отметок")
-
 
 def cleanup_storage(storage_imit: int):
     # Убираем старые данные – оставляем только последние 1440 минут
@@ -165,25 +165,36 @@ async def main_loop():
         logger.info(f"Ориентировочно это займет {estimated_minutes * 60} секунд при соблюдении лимитов Binance.")
         await fetch_candles(session, symbols, count = MAX_CACHED_CANDLES)
 
-        while True:
-            tick_start_time = time.time()
-            now_ms = int(time.time() * 1000)
+        # Создаём UDP сервер, передавая ему ссылку на глобальные данные
+        server = UDPMarketDataServer(host='127.0.0.1', port=58001)
+        await server.start()                     # ← запуск сервера (неблокирующий)
+        logger.info("UDP сервер запущен")
+    
+        try:
 
-            missing = check_space(now_ms)
-            if missing > 1:
-                logger.info(f"Обнаружено пропущенных минут: {missing}. Догоняем...")
-                await fetch_candles(session, symbols, missing)
-            else:
-                logger.info("Обновляем свечи за текущую минуту.")
-                await fetch_candles(session, symbols, 1)
+            while True:
+                tick_start_time = time.time()
+                now_ms = int(time.time() * 1000)
 
-            cleanup_storage(MAX_CACHED_CANDLES)
+                missing = check_space(now_ms)
+                if missing > 1:
+                    logger.info(f"Обнаружено пропущенных минут: {missing}. Догоняем...")
+                    await fetch_candles(session, symbols, missing)
+                else:
+                    logger.info("Обновляем свечи за текущую минуту.")
+                    await fetch_candles(session, symbols, 1)
 
-            # Вычисляем сколько осталось ждать
-            elapsed = time.time() - tick_start_time
-            wait_time = max(0, 60 - elapsed)  # минимум 0 секунд
-            logger.info(f"✅ Updated {len(global_data)} tickers for {elapsed:.2f} seconds")
-            await asyncio.sleep(wait_time)
+                cleanup_storage(MAX_CACHED_CANDLES)
+
+                server.update_data(global_data)
+                # Вычисляем сколько осталось ждать
+                elapsed = time.time() - tick_start_time
+                wait_time = max(0, 60 - elapsed)  # минимум 0 секунд
+                logger.info(f"✅ Updated {len(global_data)} tickers for {elapsed:.2f} seconds")
+                await asyncio.sleep(wait_time)
+        finally:
+            server.stop()                         # ← корректная остановка сервера
+            logger.info("UDP сервер остановлен")
 
 async def main():
     """

@@ -26,3 +26,16 @@ class KlineRecord:
     num_of_trades: int
     # Open time - время открытия свечи
     open_time: int
+
+@dataclass
+class UDPRequest:
+    """Структура запроса к UDP серверу"""
+    packet_number: int      # номер пакета (4 байта)
+    minute_number: int      # номер минуты (4 байта)
+
+@dataclass 
+class UDPResponse:
+    """Структура ответа от UDP сервера"""
+    packet_number: int               # номер пакета (4 байта)
+    minute_number: int               # номер минуты (4 байта)
+    records: list[KlineRecord]       # список записей

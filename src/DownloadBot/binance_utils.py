@@ -10,6 +10,7 @@ from datetime import datetime
 
 from bot_types import KlineRecord
 
+from collections import OrderedDict
 from collections import deque
 from typing import List
 from typing import Optional
@@ -192,7 +193,7 @@ async def fetch_klines_paginated(session: aiohttp.ClientSession, symbol: str, co
 
                                 # Обновляем end_timestamp для следующего запроса
                                 if data:
-                                    current_end = int(data[-1][0] / 1000 * 1000 - 1)  # начало предыдущей минуты
+                                    current_end = data[0][0] - 1   # <-- ИСПРАВЛЕНО
 
                         else:
                             logger.error(f"❌ Ошибка HTTP {response.status} для {symbol}")
@@ -223,9 +224,10 @@ async def fetch_klines_for_symbols(
     count: int = 1,
     end_timestamp: Optional[int] = None,
     max_concurrent: int = THREAD_POOL_SIZE
-) -> List[List[KlineRecord]]:
+) -> OrderedDict[int, list[KlineRecord]]:
     """
-    Загружает `count` минутных свечей для всех тикеров.
+    Загружает `count` минутных свечей для всех тикеров и возвращает их,
+    сгруппированными по абсолютному номеру минуты (open_time // 60000).
     
     Args:
         session: aiohttp ClientSession
@@ -233,9 +235,12 @@ async def fetch_klines_for_symbols(
         count: количество минут (по умолчанию 1)
         end_timestamp: конечная метка времени в мс. Если None → текущая завершённая минута - 1 сек.
         max_concurrent: макс. параллельных запросов
-    
+
     Returns:
-        List[List[KlineRecord]]: список по минутам, где каждая минута — список свечей тикеров
+        OrderedDict[int, list[KlineRecord]]:
+            ключ – номер минуты (open_time // 60000),
+            значение – список записей для всех тикеров за эту минуту.
+            Порядок ключей соответствует возрастанию минут (от старых к новым).
     """
     if count <= 0:
         raise ValueError("count must be positive")
@@ -255,27 +260,29 @@ async def fetch_klines_for_symbols(
         )
         tasks.append(task)
 
-    # Выполняем и собираем
-    tickers_data: List[List[KlineRecord]] = []
+    # Собираем результаты в словарь "минута -> список записей"
+    minute_to_records: dict[int, list[KlineRecord]] = {}
+
     for task in asyncio.as_completed(tasks):
+
         try:
             result = await task
-            if result:
-                tickers_data.append(result)
+            if not result:
+                continue
+
+            # Добавляем каждую свечу в соответствующую минуту
+            for candle in result:
+                minute_key = candle.open_time // 60000
+                minute_to_records.setdefault(minute_key, []).append(candle)
+
         except Exception as e:
             logger.error(f"Ошибка при загрузке данных: {e}")
+                
 
-    # Транспонируем: [tickers][minutes] → [minutes][tickers]
-    if not tickers_data:
-        return [[] for _ in range(count)]
+    sorted_minutes = sorted(minute_to_records.keys())
+    result = OrderedDict((minute, minute_to_records[minute]) for minute in sorted_minutes)
 
-    minutes_data: List[List[KlineRecord]] = [[] for _ in range(count)]
-    for ticker_candles in tickers_data:
-        for i, candle in enumerate(ticker_candles):
-            if i < count:
-                minutes_data[i].append(candle)
-
-    logger.info(f"Загружено {len(minutes_data)} минут по {len(minutes_data[0])} тикерам")
-    non_empty = sum(1 for m in minutes_data if m)
+    logger.info(f"Загружено {len(result)} минут по {len(symbols)} тикерам")
+    non_empty = sum(1 for recs in result.values() if recs)
     logger.info(f"Реально загружено {non_empty} минут (из {count})")
-    return minutes_data
+    return result

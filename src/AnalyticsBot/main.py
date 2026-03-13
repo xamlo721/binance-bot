@@ -95,25 +95,29 @@ def getTrackedTickers() -> list[str]:
     symbols = get_trading_symbols()
     if not symbols:
         return []
-                
+    
+    # Берём только первые 10 тикеров (для дебага)
+    # symbols = symbols[:10]    
+
     # for s in symbols:
     #     print(s)
-    # return symbols[:100]
-    return [
-        "BTCUSDT", 
-        "ETHUSDT",
-        "BCHUSDT",
-        "XRPUSDT",
-        "LTCUSDT",
-        "TRXUSDT",
-        "ETCUSDT",
-        "XLMUSDT",
-        "ADAUSDT",
-        "XMRUSDT",
-        "ZECUSDT",
-        "XTZUSDT",
-        "BNBUSDT"
-    ]
+
+    return symbols[:10]
+    # return [
+    #     "BTCUSDT", 
+    #     "ETHUSDT",
+    #     "BCHUSDT",
+    #     "XRPUSDT",
+    #     "LTCUSDT",
+    #     "TRXUSDT",
+    #     "ETCUSDT",
+    #     "XLMUSDT",
+    #     "ADAUSDT",
+    #     "XMRUSDT",
+    #     "ZECUSDT",
+    #     "XTZUSDT",
+    #     "BNBUSDT"
+    # ]
 
 def doTick():
     """

@@ -74,3 +74,16 @@ class AlertRecord:
     min_price_time: Optional[int] = None        # Время минимальной цены
     max_price: Optional[float] = None           # Максимальная цена
     max_price_time: Optional[int] = None        # Время максимальной цены
+    
+@dataclass
+class UDPRequest:
+    """Структура запроса к UDP серверу"""
+    packet_number: int      # номер пакета (4 байта)
+    minute_number: int      # номер минуты (4 байта)
+
+@dataclass 
+class UDPResponse:
+    """Структура ответа от UDP сервера"""
+    packet_number: int               # номер пакета (4 байта)
+    minute_number: int               # номер минуты (4 байта)
+    records: list[KlineRecord]       # список записей

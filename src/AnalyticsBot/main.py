@@ -1,5 +1,6 @@
 import time
 import asyncio
+import requests
 from pathlib import Path
 
 import sys
@@ -19,9 +20,6 @@ from datetime import datetime
 from typing import Optional
 from typing import Dict
 from typing import List
-
-from AnalyticsBot.downloader import download_current_1m_Candles                                               
-from AnalyticsBot.downloader import download_more_candles
 
 from bot_types import AlertRecord
 from bot_types import KlineRecord
@@ -43,14 +41,12 @@ from analytic_utils import calculate_prices_slidedWindow
 from analytic_utils import check_price_overlimit
 from analytic_utils import check_volume_overlimit
 
-from AnalyticsBot.binance_utils import get_trading_symbols
-
-
+from downloader import download_candles
 
 def download_candles_reccursively(trackable_tickers: list[str], minutes: int) -> List[List[KlineRecord]]:
     logger.info(f"✅ Запущено предварительное скачивание архивных данных {minutes} минутных свеч...")
     download_start_time = time.time()
-    klines_1m_full: List[List[KlineRecord]] = asyncio.run(download_more_candles(trackable_tickers, minutes, datetime.now()))
+    klines_1m_full: List[List[KlineRecord]] = asyncio.run(download_candles(trackable_tickers, minutes, datetime.now()))
     download_stop_time = time.time()
     logger.info(f"✅ Скачивание завершено.")
 
@@ -65,7 +61,7 @@ def download_candles_reccursively(trackable_tickers: list[str], minutes: int) ->
         # Запускаем второй этап скачивания
         logger.info(f"✅ Запущено предварительное скачивание архивных данных {int(duration_minutes)} минутных свеч...")
         download_start_time = time.time()
-        sub_klines: List[List[KlineRecord]] = asyncio.run(download_more_candles(trackable_tickers, int(duration_minutes), datetime.now()))
+        sub_klines: List[List[KlineRecord]] = asyncio.run(download_candles(trackable_tickers, int(duration_minutes), datetime.now()))
         download_stop_time = time.time()
         logger.info(f"✅ Скачивание завершено.")
         klines_1m_full.extend(sub_klines)
@@ -75,6 +71,26 @@ def download_candles_reccursively(trackable_tickers: list[str], minutes: int) ->
     
     return klines_1m_full
 
+def get_trading_symbols():
+    """Получение списка торгующихся тикеров"""
+    url = "https://fapi.binance.com/fapi/v1/exchangeInfo"
+    try:
+        response = requests.get(url)
+        data = response.json()
+        
+        symbols = []
+        for symbol_info in data['symbols']:
+            if (symbol_info['status'] == 'TRADING' and symbol_info.get('contractType') == 'PERPETUAL'):
+                # Исключаем тикеры с "USDC"
+                symbol_name = symbol_info['symbol']
+                if not symbol_name.startswith("USDC") and not symbol_name.endswith("USDC"):
+                    symbols.append(symbol_name)
+        
+        return symbols
+    except Exception as e:
+        logger.error(f"Ошибка при получении списка тикеров: {str(e)}")
+        return []
+    
 def getTrackedTickers() -> list[str]:
     symbols = get_trading_symbols()
     if not symbols:
@@ -123,7 +139,7 @@ def doTick():
         diff_ms = current_ts_ms - last_record_time
 
         if diff_ms > 60000:          # более чем 1 минута разницы
-            missing_minutes = min(diff_ms // 60000, MINUTE_CANDLES_LIMIT)
+            missing_minutes = min(diff_ms // 60000, MAX_CACHED_CANDLES)
             logger.info(f"Найдены {missing_minutes} недостающих минут. Скачиваем...")
 
             klines_missing: List[List[KlineRecord]] = download_candles_reccursively(trackable_tickers, missing_minutes)
@@ -147,7 +163,7 @@ def doTick():
     # ======================================================= # 
 
     logger.info(f"Обновляю скользящие 10м объёмы...")
-    klines_1m: dict[int, list[KlineRecord]] = get_recent_1m_klines(MINUTE_CANDLES_LIMIT)
+    klines_1m: dict[int, list[KlineRecord]] = get_recent_1m_klines(MAX_CACHED_CANDLES)
     if (len(klines_1m) < 10):
         logger.error(f"❌ Найдено только {len(klines_1m)} минутных свечей в хранилище.")
         logger.error(f"❌ Нужно хотя бы 10. Пропускаем тик.")
@@ -259,7 +275,7 @@ def start():
         logger.info(f"✅ Найдено торгующихся тикеров: {len(trackable_tickers)}")
 
         
-        klines_1m_full: List[List[KlineRecord]] = download_candles_reccursively(trackable_tickers, MINUTE_CANDLES_LIMIT)
+        klines_1m_full: List[List[KlineRecord]] = download_candles_reccursively(trackable_tickers, MAX_CACHED_CANDLES)
 
         logger.info(f"✅ Актуальные архивные данные за {len(klines_1m_full)} минут получены.")
 

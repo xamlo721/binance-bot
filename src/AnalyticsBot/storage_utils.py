@@ -91,10 +91,10 @@ def save_klines_to_ram(results: List[KlineRecord]):
     # Добавляем в словарь
     candle_1m_records[minute_start] = sorted_candles
 
-    # Удаляем старые записи – сохраняем только последние MINUTE_CANDLES_LIMIT минут
-    if len(candle_1m_records) > MINUTE_CANDLES_LIMIT:
+    # Удаляем старые записи – сохраняем только последние MAX_CACHED_CANDLES минут
+    if len(candle_1m_records) > MAX_CACHED_CANDLES:
         keys_sorted = sorted(candle_1m_records.keys())
-        for key in keys_sorted[:-MINUTE_CANDLES_LIMIT]:
+        for key in keys_sorted[:-MAX_CACHED_CANDLES]:
             del candle_1m_records[key]
 
     # Проверяем непрерывность диапазона минут

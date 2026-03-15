@@ -179,20 +179,25 @@ async def main_loop():
                 now_ms = int(time.time() * 1000)
 
                 missing = check_space(now_ms)
+
                 if missing > 1:
                     logger.info(f"Обнаружено пропущенных минут: {missing}. Догоняем...")
                     await fetch_candles(session, symbols, missing)
-                else:
+                    cleanup_storage(MAX_CACHED_CANDLES)
+                    server.update_data(global_data)
+                elif (missing == 1):
                     logger.info("Обновляем свечи за текущую минуту.")
                     await fetch_candles(session, symbols, 1)
+                    cleanup_storage(MAX_CACHED_CANDLES)
+                    server.update_data(global_data)
 
-                cleanup_storage(MAX_CACHED_CANDLES)
-
-                server.update_data(global_data)
                 # Вычисляем сколько осталось ждать
                 elapsed = time.time() - tick_start_time
-                wait_time = max(0, 60 - elapsed)  # минимум 0 секунд
-                logger.info(f"✅ Updated {len(global_data)} tickers for {elapsed:.2f} seconds")
+                wait_time = max(0, 3 - elapsed)  # минимум 0 секунд
+
+                if missing != 0:
+                    logger.info(f"✅ Updated {len(global_data)} tickers for {elapsed:.2f} seconds")
+
                 await asyncio.sleep(wait_time)
         finally:
             server.stop()                         # ← корректная остановка сервера

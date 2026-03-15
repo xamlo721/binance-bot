@@ -5,6 +5,7 @@ from datetime import timezone
 from typing import List
 from logger import logger
 from config import *
+from collections import OrderedDict
 
 from bot_types import KlineRecord 
 from bot_types import HoursRecord 
@@ -13,13 +14,14 @@ from bot_types import AlertRecord
 
 # Список всех отметок за MINUTE_CANDLES_LIMIT минут 
 #                   <НОМЕР_МИНУТЫ List<МИНУТНАЯ_ЗАПИСЬ>>
-candle_1m_records: dict[int, list[KlineRecord]] = {}
-candle_1h_records: dict[int, list[HoursRecord]] = {}
+candle_1m_records: OrderedDict[int, list[KlineRecord]] = OrderedDict()
+candle_1h_records: OrderedDict[int, list[HoursRecord]] = OrderedDict()
 
 def _format_ts(ts_ms: int) -> str:
     """Преобразует timestamp в миллисекундах в строку ГГГГ-ММ-ДД ЧЧ:ММ:СС"""
     return datetime.fromtimestamp(ts_ms / 1000).strftime('%Y-%m-%d %H:%M:%S')
 
+def is_storage_consistent(candle_dict: OrderedDict[int, List[KlineRecord]]) -> bool:
     """
     Проверяет корректность словаря минутных свечей.
 
@@ -42,33 +44,33 @@ def _format_ts(ts_ms: int) -> str:
     # 1. Проверка непрерывности ключей
     keys = sorted(candle_dict.keys())
     for i in range(1, len(keys)):
-        if keys[i] != keys[i-1] + 60000:
+        if keys[i] != keys[i-1] + 1:
             print(f"Ошибка: разрыв в последовательности минут между {keys[i-1]} и {keys[i]}")
             return False
 
     # 2. Проверка совпадения open_time с ключом
     for minute, records in candle_dict.items():
         for record in records:
-            if record.open_time != minute:
+            if record.open_time != minute * 60000:
                 print(f"Ошибка: запись {record} имеет open_time={_format_ts(record.open_time)}, "
                       f"не совпадающий с ключом {_format_ts(minute * 60000)}")
                 return False
 
     return True
 
-def get_1m_candles() -> dict[int, list[KlineRecord]]:
+def get_1m_candles() -> OrderedDict[int, list[KlineRecord]]:
     return candle_1m_records
 
-def save_1h_records(volumes:  dict[int, list[HoursRecord]]) -> bool:
+def save_1h_records(volumes:  OrderedDict[int, list[HoursRecord]]) -> bool:
     global candle_1h_records
     candle_1h_records = volumes
     return True
 
 
-def save_klines_to_ram(results: List[KlineRecord]):
+def save_klines_to_ram(results: OrderedDict[int, list[KlineRecord]]):
     """
     Сохраняет свечи в оперативную память с скользящим окном.
-    Ключ словаря – начало минуты (timestamp в ms).
+    Ключ словаря – номер минуты в штуках с 1970.
     При добавлении проверяется:
         • дублирование минут,
         • сохранение только последних MINUTE_CANDLES_LIMIT минут,
@@ -80,31 +82,36 @@ def save_klines_to_ram(results: List[KlineRecord]):
 
     global candle_1m_records
 
-    # Определяем начало минуты (floor to 60000 мс)
-    minute_start = (results[0].open_time // 60000) * 60000
+    added_any = False
 
-    # Проверка дублирования
-    if minute_start in candle_1m_records:
-        logger.debug(f"Минута {minute_start} уже существует, пропускаем")
+    for minute_key, candles in results.items():
+
+        # Проверка дублирования
+        if minute_key in candle_1m_records:
+            logger.debug(f"Минута {minute_key} уже существует, пропускаем")
+            continue
+
+        # Добавляем в глобальный кэш
+        candle_1m_records[minute_key] = candles
+        added_any = True
+        logger.debug(f"Добавлено {len(candles)} свечей на ключ {minute_key}")
+
+    if not added_any:
+        logger.debug("Не добавлено ни одной новой минуты (все уже существуют)")
         return
-
-    # Сортируем свечи по времени открытия
-    sorted_candles = sorted(results, key=lambda x: x.open_time)
-
-    # Добавляем в словарь
-    candle_1m_records[minute_start] = sorted_candles
 
     # Удаляем старые записи – сохраняем только последние MAX_CACHED_CANDLES минут
     if len(candle_1m_records) > MAX_CACHED_CANDLES:
+        # Сортируем ключи (миллисекунды) и удаляем самые старые
         keys_sorted = sorted(candle_1m_records.keys())
         for key in keys_sorted[:-MAX_CACHED_CANDLES]:
             del candle_1m_records[key]
 
-    # Проверяем непрерывность диапазона минут
+    # Проверяем непрерывность диапазона минут (после возможного удаления)
     if len(candle_1m_records) > 1:
         keys_sorted = sorted(candle_1m_records.keys())
-        for i in range(len(keys_sorted)-1):
-            diff_ms = keys_sorted[i+1] - keys_sorted[i]
+        for i in range(len(keys_sorted) - 1):
+            if keys_sorted[i+1] != keys_sorted[i] +1:
                 logger.warning(f"Разрыв между минутами {keys_sorted[i]} и {keys_sorted[i+1]}: Δ={keys_sorted[i+1] - keys_sorted[i]}с")
 
     # Логируем общее состояние
@@ -115,7 +122,7 @@ def save_klines_to_ram(results: List[KlineRecord]):
         logger.debug(f"Временной диапазон: от {_format_ts(min(times) * 60000)} до {_format_ts(max(times) * 60000)}")
 
 
-def get_recent_1m_klines(count: int = 60) -> dict[int, list[KlineRecord]]:
+def get_recent_1m_klines(count: int = 60) -> OrderedDict[int, list[KlineRecord]]:
     """
     Возвращает словарь с минутными свечами за последние N минут.
     Ключи словаря – номера минут (временные метки), значения – списки KlineRecord.
@@ -126,31 +133,31 @@ def get_recent_1m_klines(count: int = 60) -> dict[int, list[KlineRecord]]:
 
     # Защита от пустого словаря или неположительного count
     if not candle_1m_records or count <= 0:
-        return {}
+        return OrderedDict()
     
     # Если запрошено больше, чем есть, берём все
     if count > len(candle_1m_records):
         count = len(candle_1m_records)
 
-    # Берём последние count ключей
+    # Берём последние count ключей (порядок сохраняется, так как candle_1m_records — OrderedDict)
     recent_keys = list(candle_1m_records.keys())[-count:]
 
-    # Формируем результирующий словарь
-    return {key: candle_1m_records[key] for key in recent_keys}
+    # Формируем новый OrderedDict с теми же ключами и значениями
+    return OrderedDict((key, candle_1m_records[key]) for key in recent_keys)
 
-def get_recent_1h_klines(count: int = 60) -> dict[int, list[HoursRecord]]:
-    """Получить свечи за последние N минут"""
+def get_recent_1h_klines(count: int = 60) -> OrderedDict[int, list[HoursRecord]]:
+    """Получить свечи за последние N часов."""
     global candle_1h_records
-    
+
     # Защита от пустого словаря или неположительного count
     if not candle_1h_records or count <= 0:
-        return {}
-    
+        return OrderedDict()
+
     if count > len(candle_1h_records):
         count = len(candle_1h_records)
-    
-    # Берём последние count ключей
+
+    # Берём последние count ключей (порядок сохраняется, если candle_1h_records — OrderedDict)
     recent_keys = list(candle_1h_records.keys())[-count:]
 
-    # Формируем результирующий словарь
-    return {key: candle_1h_records[key] for key in recent_keys}
+    # Формируем OrderedDict
+    return OrderedDict((key, candle_1h_records[key]) for key in recent_keys)

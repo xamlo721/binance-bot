@@ -20,6 +20,7 @@ from datetime import datetime
 from typing import Optional
 from typing import Dict
 from typing import List
+from collections import OrderedDict
 
 from bot_types import AlertRecord
 from bot_types import KlineRecord
@@ -43,10 +44,10 @@ from analytic_utils import check_volume_overlimit
 
 from downloader import download_candles
 
-def download_candles_reccursively(trackable_tickers: list[str], minutes: int) -> List[List[KlineRecord]]:
+def download_candles_reccursively(trackable_tickers: list[str], minutes: int) -> OrderedDict[int, list[KlineRecord]]:
     logger.info(f"✅ Запущено предварительное скачивание архивных данных {minutes} минутных свеч...")
     download_start_time = time.time()
-    klines_1m_full: List[List[KlineRecord]] = asyncio.run(download_candles(trackable_tickers, minutes, datetime.now()))
+    klines_1m_full: OrderedDict[int, list[KlineRecord]] = asyncio.run(download_candles(trackable_tickers, minutes, datetime.now()))
     download_stop_time = time.time()
     logger.info(f"✅ Скачивание завершено.")
 
@@ -61,10 +62,12 @@ def download_candles_reccursively(trackable_tickers: list[str], minutes: int) ->
         # Запускаем второй этап скачивания
         logger.info(f"✅ Запущено предварительное скачивание архивных данных {int(duration_minutes)} минутных свеч...")
         download_start_time = time.time()
-        sub_klines: List[List[KlineRecord]] = asyncio.run(download_candles(trackable_tickers, int(duration_minutes), datetime.now()))
+        sub_klines: OrderedDict[int, list[KlineRecord]] = asyncio.run(download_candles(trackable_tickers, int(duration_minutes), datetime.now()))
         download_stop_time = time.time()
         logger.info(f"✅ Скачивание завершено.")
-        klines_1m_full.extend(sub_klines)
+
+        for minute, records in sub_klines.items():
+            klines_1m_full[minute] = records
 
         # Пересчитываем количество минут, которые ещё нужно скачать
         duration_minutes = (download_stop_time - download_start_time) / 60
@@ -137,28 +140,25 @@ def doTick():
 
     recent_klines = get_recent_1m_klines(1)          # последние 1 минута
     if recent_klines:
-        last_minute = max(recent_klines.keys())
+        last_minute_number = max(recent_klines.keys())
         last_record_time = recent_klines[last_minute][0].open_time    # timestamp в мс
         current_ts_ms = int(datetime.now().timestamp() * 1000)
         diff_ms = current_ts_ms - last_record_time
 
-        if diff_ms > 60000:          # более чем 1 минута разницы
-            missing_minutes = min(diff_ms // 60000, MAX_CACHED_CANDLES)
+        if last_minute_number != current_minute_number:          # более чем 1 минута разницы
+            missing_minutes = min(current_minute_number - last_minute_number, MAX_CACHED_CANDLES)
             logger.info(f"Найдены {missing_minutes} недостающих минут. Скачиваем...")
 
-            klines_missing: List[List[KlineRecord]] = download_candles_reccursively(trackable_tickers, missing_minutes)
+            klines_missing: OrderedDict[int, list[KlineRecord]] = download_candles_reccursively(trackable_tickers, missing_minutes)
 
             if klines_missing:
-                for minute_candles in klines_missing:
-                    save_klines_to_ram(minute_candles)
-                    open_time_dt = datetime.fromtimestamp(minute_candles[0].open_time / 1000)
-                    logger.debug(f"Сохранена минута {open_time_dt}." )
+                save_klines_to_ram(klines_missing)
             else:
                 logger.warning("❌ Не удалось загрузить недостающие минутные свечи")
     # ======================================================= # 
 
     logger.info(f"Запускаю проверку хранилища на консистентность...")
-    storage_klines: dict[int, list[KlineRecord]] = get_1m_candles()
+    storage_klines: OrderedDict[int, list[KlineRecord]] = get_1m_candles()
     if not is_storage_consistent(storage_klines):
         logger.error("Список candle_1m_records не содержит непрерывный диапазон минутных свечей.")
         return
@@ -167,7 +167,7 @@ def doTick():
     # ======================================================= # 
 
     logger.info(f"Обновляю скользящие 10м объёмы...")
-    klines_1m: dict[int, list[KlineRecord]] = get_recent_1m_klines(MAX_CACHED_CANDLES)
+    klines_1m: OrderedDict[int, list[KlineRecord]] = get_recent_1m_klines(MAX_CACHED_CANDLES)
     if (len(klines_1m) < 10):
         logger.error(f"❌ Найдено только {len(klines_1m)} минутных свечей в хранилище.")
         logger.error(f"❌ Нужно хотя бы 10. Пропускаем тик.")
@@ -184,7 +184,7 @@ def doTick():
     # ======================================================= # 
     logger.info(f"Обновляю скользящую часовую статистику...")
 
-    hours_statistic: Optional[dict[int, list[HoursRecord]]] = calculate_1h_records(storage_klines)
+    hours_statistic: Optional[OrderedDict[int, list[HoursRecord]]] = calculate_1h_records(storage_klines)
     if hours_statistic is None:
         logger.error(f"❌ Ошибка вычисления часовой статистики. Пропускаем тик.")
         return
@@ -279,15 +279,12 @@ def start():
         logger.info(f"✅ Найдено торгующихся тикеров: {len(trackable_tickers)}")
 
         
-        klines_1m_full: List[List[KlineRecord]] = download_candles_reccursively(trackable_tickers, MAX_CACHED_CANDLES)
+        klines_1m_full: OrderedDict[int, list[KlineRecord]] = download_candles_reccursively(trackable_tickers, MAX_CACHED_CANDLES)
 
         logger.info(f"✅ Актуальные архивные данные за {len(klines_1m_full)} минут получены.")
 
         if klines_1m_full:
-            for candles in klines_1m_full:
-                save_klines_to_ram(candles)
-                open_time_dt = datetime.fromtimestamp(candles[0].open_time / 1000)
-                logger.debug(f"Сохранена минута {open_time_dt}." )
+            save_klines_to_ram(klines_1m_full)
         else:
             logger.warning("❌ Не удалось загрузить исторические данные")
         logger.info(f"Записываю данные в хранилище...")

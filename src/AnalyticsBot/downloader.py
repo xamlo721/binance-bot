@@ -1,6 +1,6 @@
 import asyncio
 from typing import List, Dict
-from collections import defaultdict
+from collections import OrderedDict
 from datetime import datetime
 
 # Предполагаем, что классы UDPClient, UDPRequest, UDPResponse, MessageSerializer 
@@ -16,7 +16,7 @@ async def download_candles(
     end_time: datetime,
     server_addr: tuple = ('127.0.0.1', 58001),
     timeout: float = 3.0
-) -> List[List[KlineRecord]]:
+) -> OrderedDict[int, list[KlineRecord]]:
     """
     Асинхронная внутренняя функция, выполняющая запросы к UDP-серверу.
     Возвращает список списков KlineRecord, сгруппированных по тикерам.
@@ -25,7 +25,7 @@ async def download_candles(
     start_minute = end_minute - minutes  # включительно, получим minutes свечей: [start_minute, end_minute-1]
 
     # Словарь для накопления данных по тикерам
-    symbol_to_records: Dict[str, List[KlineRecord]] = defaultdict(list)
+    result: OrderedDict[int, list[KlineRecord]] = OrderedDict()
 
     # Создаём клиент и подключаемся
     async with UDPClient() as client:
@@ -41,9 +41,8 @@ async def download_candles(
                         timeout=timeout
                     )
                     # Фильтруем записи только по интересующим тикерам
-                    for record in response.records:
-                        if record.symbol in trackable_tickers:
-                            symbol_to_records[record.symbol].append(record)
+                    filtered = [rec for rec in response.records if rec.symbol in trackable_tickers]
+                    result[minute] = filtered
 
 
                     break  # успешно, выходим из цикла попыток

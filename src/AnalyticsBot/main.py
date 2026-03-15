@@ -314,7 +314,8 @@ def start():
                 time.sleep(wait_time)
 
     except KeyboardInterrupt:
-        logger.warning("Получен сигнал прерывания...")
+        logger.info("Получен сигнал прерывания...")
+        logger.info("Остановлено пользователем")
 
 
 start()

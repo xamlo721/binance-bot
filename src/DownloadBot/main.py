@@ -203,6 +203,12 @@ async def main():
     Main entry point.
     """
 
-    await main_loop()
+    try:
+        
+        await main_loop()
+
+    except KeyboardInterrupt:
+        logger.info("Получен сигнал прерывания...")
+        logger.info("Остановлено пользователем")
 
 asyncio.run(main())

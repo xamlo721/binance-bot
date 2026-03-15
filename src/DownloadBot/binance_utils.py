@@ -282,7 +282,7 @@ async def fetch_klines_for_symbols(
     sorted_minutes = sorted(minute_to_records.keys())
     result = OrderedDict((minute, minute_to_records[minute]) for minute in sorted_minutes)
 
-    logger.info(f"Загружено {len(result)} минут по {len(symbols)} тикерам")
+    #logger.info(f"Загружено {len(result)} минут по {len(symbols)} тикерам")
     non_empty = sum(1 for recs in result.values() if recs)
-    logger.info(f"Реально загружено {non_empty} минут (из {count})")
+    #logger.info(f"Реально загружено {non_empty} минут (из {count})")
     return result

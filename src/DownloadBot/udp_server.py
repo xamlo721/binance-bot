@@ -3,6 +3,7 @@ from collections import OrderedDict
 from typing import Dict
 
 from config import *
+from logger import *
 from serializer import *
 
 class UDPMarketDataServer:
@@ -25,7 +26,7 @@ class UDPMarketDataServer:
         )
         
         self.transport = transport
-        print(f"UDP сервер запущен на {self.host}:{self.port}")
+        logger.info(f"UDP сервер запущен на {self.host}:{self.port}")
         
     def stop(self):
         """Остановка сервера"""
@@ -49,20 +50,27 @@ class UDPServerProtocol(asyncio.DatagramProtocol):
         try:
             # Проверяем, что транспорт инициализирован
             if self.transport is None:
-                print(f"Ошибка: транспорт не инициализирован для запроса от {addr}")
+                logger.error(f"Ошибка: транспорт не инициализирован для запроса от {addr}")
                 return
                 
             # Десериализуем запрос
             request = self.server.serializer.deserialize_request(data)
             
             if request is None:
-                print(f"Получен некорректный запрос от {addr}")
+                logger.error(f"Получен некорректный запрос от {addr}")
                 return
                 
-            print(f"Запрос от {addr}: packet={request.packet_number}, minute={request.minute_number}")
+            logger.info(f"Запрос от {addr}: packet={request.packet_number}, minute={request.minute_number}")
             
+            if (request.minute_number not in self.server.global_data.keys()):
+                logger.warning(f"Запрос от {addr}: packet={request.packet_number}, minute={request.minute_number}")
+                logger.warning(f"Запрошеной минуты в хранилище не обнаружено.")
+
+                # TODO: вернуть клиенту код отсутствия 
+                return
+
             # Получаем данные за запрошенную минуту
-            records = self.server.global_data.get(request.minute_number, [])
+            records: list[KlineRecord] = self.server.global_data.get(request.minute_number, [])
             
             # Формируем и отправляем ответ
             response = UDPResponse(
@@ -76,10 +84,13 @@ class UDPServerProtocol(asyncio.DatagramProtocol):
             # Отправляем ответ
             try:
                 self.transport.sendto(response_data, addr)
+                logger.info(f"Отправлен ответ для {addr}: packet={response.packet_number}, minute={response.minute_number}, tickers={len(records)}.")
+                logger.info(f"Размер ответа для минуты {request.minute_number}: {len(response_data)} байт")
+
             except AttributeError as e:
-                print(f"Ошибка отправки: транспорт не поддерживает sendto - {e}")
+                logger.error(f"Ошибка отправки: транспорт не поддерживает sendto - {e}")
             except Exception as e:
-                print(f"Ошибка отправки данных: {e}")
+                logger.error(f"Ошибка отправки данных: {e}")
             
         except Exception as e:
-            print(f"Ошибка обработки запроса от {addr}: {e}")
+            logger.error(f"Ошибка обработки запроса от {addr}: {e}")

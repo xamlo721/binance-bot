@@ -45,7 +45,6 @@ async def download_candles(
                         if record.symbol in trackable_tickers:
                             symbol_to_records[record.symbol].append(record)
 
-                    logger.debug(f"Минута {minute} принесла {len(response.records)} тикеров")
 
                     break  # успешно, выходим из цикла попыток
 
@@ -57,12 +56,9 @@ async def download_candles(
                 except Exception as e:
                     logger.error(f"Ошибка при запросе минуты {minute}: {e}")
                     break  # другие ошибки не повторяем
+            logger.debug(f"Минута {minute} принесла {len(result[minute])} тикеров")
 
-    # Преобразуем словарь в список списков, сохраняя порядок тикеров из trackable_tickers?
-    # Для совместимости со старой функцией вернём список списков, где каждый внутренний список
-    # содержит свечи для одного тикера (порядок может быть произвольным, но обычно по тикерам)
-    result = [symbol_to_records[symbol] for symbol in trackable_tickers if symbol in symbol_to_records]
 
-    logger.debug(f"Всего скачано {len(result)} минут")
+    logger.debug(f"Всего скачано {len(result)} минут для {len(trackable_tickers)} тикеров")
 
     return result

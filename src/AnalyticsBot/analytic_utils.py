@@ -223,7 +223,7 @@ def calculate_volumes_slidedWindow(all_records: OrderedDict[int, List[HoursRecor
             """Преобразует timestamp в миллисекундах в строку ГГГГ-ММ-ДД ЧЧ:ММ:СС"""
             return datetime.fromtimestamp(ts_ms / 1000).strftime('%Y-%m-%d %H:%M:%S')
 
-        logger.info(f"Обработка {len(records_to_process)} периодов для агрегации (с {_format_ts(records_to_process[0])} по {_format_ts(records_to_process[-1])})")        
+        logger.info(f"Обработка {len(records_to_process)} периодов для агрегации (с {_format_ts(records_to_process[0] * 60000)} по {_format_ts(records_to_process[-1] * 60000)})")        
 
         # Словарь для хранения объемов по тикерам
         volumes_by_symbol: Dict[str, Dict[str, float]] = {}

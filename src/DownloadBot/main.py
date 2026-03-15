@@ -85,9 +85,9 @@ async def fetch_candles(session: aiohttp.ClientSession, symbols: list[str], coun
 
     # Запрос к Binance: все тикеры за указанное количество минут до `end_timestamp`
     period_data: OrderedDict[int, list[KlineRecord]] = await fetch_klines_for_symbols(session, symbols, count, end_timestamp)
-    logger.info(f"fetch вернул {len(period_data)} отметок")
+    #logger.info(f"fetch вернул {len(period_data)} отметок")
 
-    logger.info(f"До сохранения там {len(global_data)} отметок")
+    #logger.info(f"До сохранения там {len(global_data)} отметок")
     # Сохраняем свечи по абсолютному номеру минуты
     for minute_key, records in period_data.items():
         # Если минута уже существует, добавляем записи (предполагаем, что дубликатов нет)
@@ -95,7 +95,7 @@ async def fetch_candles(session: aiohttp.ClientSession, symbols: list[str], coun
             global_data[minute_key].extend(records)
         else:
             global_data[minute_key] = records
-    logger.info(f"После сохранения в global_data {len(global_data)} минут")
+    #logger.info(f"После сохранения в global_data {len(global_data)} минут")
 
 def cleanup_storage(storage_imit: int):
     # Убираем старые данные – оставляем только последние 1440 минут

@@ -16,7 +16,10 @@ from bot_types import AlertRecord
 candle_1m_records: dict[int, list[KlineRecord]] = {}
 candle_1h_records: dict[int, list[HoursRecord]] = {}
 
-def is_storage_consistent(candle_dict: dict[int, List[KlineRecord]]) -> bool:
+def _format_ts(ts_ms: int) -> str:
+    """Преобразует timestamp в миллисекундах в строку ГГГГ-ММ-ДД ЧЧ:ММ:СС"""
+    return datetime.fromtimestamp(ts_ms / 1000).strftime('%Y-%m-%d %H:%M:%S')
+
     """
     Проверяет корректность словаря минутных свечей.
 
@@ -47,8 +50,8 @@ def is_storage_consistent(candle_dict: dict[int, List[KlineRecord]]) -> bool:
     for minute, records in candle_dict.items():
         for record in records:
             if record.open_time != minute:
-                print(f"Ошибка: запись {record} имеет open_time={record.open_time}, "
-                      f"не совпадающий с ключом {minute}")
+                print(f"Ошибка: запись {record} имеет open_time={_format_ts(record.open_time)}, "
+                      f"не совпадающий с ключом {_format_ts(minute * 60000)}")
                 return False
 
     return True
@@ -102,29 +105,20 @@ def save_klines_to_ram(results: List[KlineRecord]):
         keys_sorted = sorted(candle_1m_records.keys())
         for i in range(len(keys_sorted)-1):
             diff_ms = keys_sorted[i+1] - keys_sorted[i]
-            if diff_ms != 60000:
-                logger.warning(
-                    f"Разрыв между минутами {keys_sorted[i]} и "
-                    f"{keys_sorted[i+1]}: Δ={diff_ms}мс"
-                )
+                logger.warning(f"Разрыв между минутами {keys_sorted[i]} и {keys_sorted[i+1]}: Δ={keys_sorted[i+1] - keys_sorted[i]}с")
 
-    # Логируем результат
-    logger.debug(f"Добавлено {len(sorted_candles)} свечей на ключ {minute_start}")
-
-    # Дополнительные сведения о текущем состоянии памяти
+    # Логируем общее состояние
     non_empty_periods = len(candle_1m_records)
-    logger.debug(f"Непустых периодов: {non_empty_periods}")
+    logger.debug(f"Непустых периодов в памяти: {non_empty_periods}")
     if non_empty_periods > 0:
         times = list(candle_1m_records.keys())
-        logger.debug(
-            f"Временной диапазон: от {min(times)} до {max(times)}"
-        )
+        logger.debug(f"Временной диапазон: от {_format_ts(min(times) * 60000)} до {_format_ts(max(times) * 60000)}")
 
 
 def get_recent_1m_klines(count: int = 60) -> dict[int, list[KlineRecord]]:
     """
     Возвращает словарь с минутными свечами за последние N минут.
-    Ключи словаря – номера минут (временные метки), значения – списки CandleRecord.
+    Ключи словаря – номера минут (временные метки), значения – списки KlineRecord.
     Если записей меньше, чем запрошено, возвращаются все имеющиеся.
     При пустом словаре или некорректном count возвращается пустой словарь.
     """

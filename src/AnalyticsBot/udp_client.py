@@ -3,14 +3,14 @@ import struct
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-# ========== Копия классов сериализации (или импорт) ==========
-# Эти классы должны быть идентичны тем, что используются на сервере.
-# Предположим, они находятся в модуле `serializer`.
-# Если нет – скопируйте их сюда или импортируйте.
+from logger import *
+from config import *
+
 from serializer import UDPRequest, UDPResponse, MessageSerializer
 
 # ========== Клиент ==========
 class UDPClientProtocol(asyncio.DatagramProtocol):
+
     def __init__(self, serializer: MessageSerializer):
         self.serializer = serializer
         self.transport = None
@@ -30,6 +30,7 @@ class UDPClientProtocol(asyncio.DatagramProtocol):
                 self.response_future.set_exception(
                     ValueError("Некорректный ответ от сервера")
                 )
+
         if self.timeout_handle:
             self.timeout_handle.cancel()
 

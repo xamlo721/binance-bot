@@ -2,7 +2,7 @@ import struct
 import pickle
 from typing import Tuple, Optional
 
-from bot_types import *
+from AnalyticsBot.bot_types import *
 
 class MessageSerializer:
     """Класс для бинарной сериализации сообщений"""

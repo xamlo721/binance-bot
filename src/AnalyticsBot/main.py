@@ -5,15 +5,16 @@ from pathlib import Path
 
 import sys
 
-from logger import logger
-from config import *
-
 src_path = Path(__file__).resolve().parent.parent
 analytics_bot_src_path = Path(__file__).resolve().parent
-sys.path.append(str(src_path))
-sys.path.append(str(analytics_bot_src_path))
-logger.warning(src_path)
-logger.warning(analytics_bot_src_path)
+sys.path.insert(0, str(src_path))
+sys.path.insert(0, str(analytics_bot_src_path))
+
+from AnalyticsBot.logger import logger
+from AnalyticsBot.config import *
+
+logger.debug(str(f"src_path = {src_path}"))
+logger.debug(str(f"analytics_bot_src_path = {analytics_bot_src_path}"))
 
 from datetime import datetime
 
@@ -263,6 +264,12 @@ def doTick():
         overlimit_tickers = [candle for candle in last_minute_candles if candle.symbol in volume_alerts]
         logger.info(f"✅ Проверка закончена. Зафиксировано {len(overlimit_tickers)} превышений")
     # ======================================================= # 
+
+
+    for kline in overlimit_tickers:
+        logger.warning(f"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
+        logger.warning(f"XXX Зафиксирован алекрт по тикеру {kline.symbol} XXX")
+        logger.warning(f"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
 
     return
 

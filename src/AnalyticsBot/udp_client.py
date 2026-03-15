@@ -3,8 +3,8 @@ import struct
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-from logger import *
-from config import *
+from AnalyticsBot.logger import *
+from AnalyticsBot.config import *
 
 from serializer import UDPRequest, UDPResponse, MessageSerializer
 

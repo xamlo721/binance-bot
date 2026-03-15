@@ -3,13 +3,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from datetime import timezone
 from typing import List
-from logger import logger
-from config import *
+from AnalyticsBot.logger import logger
+from AnalyticsBot.config import *
 from collections import OrderedDict
 
-from bot_types import KlineRecord 
-from bot_types import HoursRecord 
-from bot_types import AlertRecord 
+from AnalyticsBot.bot_types import KlineRecord 
+from AnalyticsBot.bot_types import HoursRecord 
+from AnalyticsBot.bot_types import AlertRecord 
 
 
 # Список всех отметок за MINUTE_CANDLES_LIMIT минут 

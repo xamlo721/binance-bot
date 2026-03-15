@@ -7,8 +7,8 @@ from datetime import datetime
 # уже определены (например, в модуле udp_client.py)
 from udp_client import UDPClient, UDPRequest, UDPResponse
 
-from bot_types import *
-from logger import *
+from AnalyticsBot.bot_types import *
+from AnalyticsBot.logger import *
 
 async def download_candles(
     trackable_tickers: List[str],

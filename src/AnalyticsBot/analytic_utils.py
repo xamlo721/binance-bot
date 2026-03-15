@@ -5,21 +5,20 @@ from typing import Dict
 from typing import List
 from datetime import datetime
 
-from logger import logger
-from config import *
+from AnalyticsBot.logger import logger
+from AnalyticsBot.config import *
 from collections import OrderedDict
 
-from bot_types import KlineRecord
-from bot_types import HoursRecord
-from bot_types import AlertRecord
-
+from AnalyticsBot.bot_types import KlineRecord
+from AnalyticsBot.bot_types import HoursRecord
+from AnalyticsBot.bot_types import AlertRecord
 from AnalyticsBot.bot_types import Volume_10m
 
 current_alerts: list[AlertRecord] = []
 
 from typing import Dict, List, Optional
 
-def calculate_10m_volumes_slidedWindow(candle_dict: dict[int, List[KlineRecord]]) -> Optional[List[Volume_10m]]:
+def calculate_10m_volumes_slidedWindow(candle_dict: OrderedDict[int, List[KlineRecord]]) -> Optional[List[Volume_10m]]:
     """
     Возвращает список Volume_10m – один объект для каждого тикера,
     содержащий суммарный объём за последние 10 минут и временные метки начала/конца

@@ -102,7 +102,7 @@ def getTrackedTickers() -> list[str]:
     # for s in symbols:
     #     print(s)
 
-    return symbols[:10]
+    return symbols#[:500] 
     # return [
     #     "BTCUSDT", 
     #     "ETHUSDT",

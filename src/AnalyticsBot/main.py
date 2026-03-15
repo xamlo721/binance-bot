@@ -141,9 +141,9 @@ def doTick():
     recent_klines = get_recent_1m_klines(1)          # последние 1 минута
     if recent_klines:
         last_minute_number = max(recent_klines.keys())
-        last_record_time = recent_klines[last_minute][0].open_time    # timestamp в мс
-        current_ts_ms = int(datetime.now().timestamp() * 1000)
-        diff_ms = current_ts_ms - last_record_time
+        # -1 стоит, потому что в свеча с номером текущей минутой закрывается по мнению бинанса в 00 следующей минуты
+        # и чтобы не ломать психику логике ботов, проще тут это учесть
+        current_minute_number = int(datetime.now().timestamp() / 60) - 1
 
         if last_minute_number != current_minute_number:          # более чем 1 минута разницы
             missing_minutes = min(current_minute_number - last_minute_number, MAX_CACHED_CANDLES)

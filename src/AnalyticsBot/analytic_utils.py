@@ -7,6 +7,7 @@ from datetime import datetime
 
 from logger import logger
 from config import *
+from collections import OrderedDict
 
 from bot_types import KlineRecord
 from bot_types import HoursRecord
@@ -77,7 +78,7 @@ def calculate_10m_volumes_slidedWindow(candle_dict: dict[int, List[KlineRecord]]
         for i in range(n_symbols)
     ]
 
-def calculate_1h_records(candle_1m_records: dict[int, list[KlineRecord]]) -> Optional[dict[int, list[HoursRecord]]]:
+def calculate_1h_records(candle_1m_records: OrderedDict[int, list[KlineRecord]]) -> Optional[OrderedDict[int, list[HoursRecord]]]:
     """
     Вычисляет часовые агрегаты на основе минутных свечей.
     Возвращает словарь, где ключ – начало часа (timestamp в миллисекундах), 
@@ -106,7 +107,7 @@ def calculate_1h_records(candle_1m_records: dict[int, list[KlineRecord]]) -> Opt
     minutes_keys = minutes_keys[-valid_minutes_count:]
     
     # Группируем по часам (60 минут в каждом)
-    result_records: dict[int, list[HoursRecord]] = {}
+    result_records: OrderedDict[int, list[HoursRecord]] = OrderedDict()
 
     # Разбиваем на часы по 60 минут
     for hour_idx in range(0, valid_minutes_count, 60):
@@ -178,9 +179,12 @@ def calculate_1h_records(candle_1m_records: dict[int, list[KlineRecord]]) -> Opt
             if hour_records:  # добавляем только если есть записи
                 result_records[hour_start] = hour_records
     
-    return result_records if result_records else None
+    if result_records:
+        return OrderedDict((key, result_records[key]) for key in result_records.keys())
+    else:
+        return None
 
-def calculate_volumes_slidedWindow(all_records: dict[int, List[HoursRecord]], num_hours: int) -> Optional[dict[str, dict[str, float]]]:
+def calculate_volumes_slidedWindow(all_records: OrderedDict[int, List[HoursRecord]], num_hours: int) -> Optional[Dict[str, dict[str, float]]]:
     """
     Агрегация объемов из исторических записей
     

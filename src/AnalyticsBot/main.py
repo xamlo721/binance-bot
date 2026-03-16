@@ -36,6 +36,7 @@ from AnalyticsBot.storage_utils import save_1h_records
 from AnalyticsBot.storage_utils import save_klines_to_ram
 from AnalyticsBot.storage_utils import is_storage_consistent
 
+from analytic_utils import validate_ticker
 from analytic_utils import calculate_10m_volumes_slidedWindow
 from analytic_utils import calculate_1h_records
 from analytic_utils import calculate_volumes_slidedWindow
@@ -44,6 +45,11 @@ from analytic_utils import check_price_overlimit
 from analytic_utils import check_volume_overlimit
 
 from downloader import download_candles
+
+from alert_server import *
+
+server = AlertServer()
+
 
 def download_candles_reccursively(trackable_tickers: list[str], minutes: int) -> OrderedDict[int, list[KlineRecord]]:
     logger.info(f"✅ Запущено предварительное скачивание архивных данных {minutes} минутных свеч...")
@@ -128,8 +134,8 @@ def doTick():
     Функция ежеминутного тика
     """
 
-    logger.info("    # ====================== doTick ========================= #")
-    logger.info("    Обновляем список тикеров...")
+    logger.info("# ====================== doTick ========================= #")
+    logger.info("Обновляем список тикеров...")
     # TODO: Необходимо отработать моменты, когда отслеживаемые тикеры закрываются для торговли
     trackable_tickers: list[str] = getTrackedTickers()
     if len(trackable_tickers) == 0:
@@ -160,7 +166,10 @@ def doTick():
 
     logger.info(f"Запускаю проверку хранилища на консистентность...")
     storage_klines: OrderedDict[int, list[KlineRecord]] = get_1m_candles()
-    if not is_storage_consistent(storage_klines):
+    validated_klines = validate_ticker(storage_klines)    # применяем фильтрацию
+    save_klines_to_ram(validated_klines)
+
+    if not is_storage_consistent(validated_klines):
         logger.error("Список candle_1m_records не содержит непрерывный диапазон минутных свечей.")
         return
     
@@ -271,7 +280,29 @@ def doTick():
         logger.warning(f"XXX Зафиксирован алекрт по тикеру {kline.symbol} XXX")
         logger.warning(f"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
 
+    # Эмуляция появления алерта
+    alert = AlertRecord(
+        ticker="BTCUSDT",
+        volume="Объём превысил 10 млн",
+        time=1234567890000,
+        buy_short_price=50000.0
+    )
+    asyncio.run(server.send_alert(alert, packet_number=1))
+
+    logger.info("# ===================== End Tick ======================== #")
+    logger.info("")
+
     return
+
+# Сервак под алерты
+async def run_server():
+    server = AlertServer()
+    await server.start()
+
+    try:
+        await asyncio.Event().wait()  # держим сервер запущенным
+    except KeyboardInterrupt:
+        server.stop()
 
 def start():
     try:
@@ -305,6 +336,8 @@ def start():
         logger.info(f"✅ Проверка хранилища успешно пройдена.")
 
         logger.info(f"Запускаю основной аналитический цикл анализа...")
+        
+        asyncio.run(run_server())
 
         while True:
             start_time = time.time()

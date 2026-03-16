@@ -15,7 +15,7 @@ async def download_candles(
     minutes: int,
     end_time: datetime,
     server_addr: tuple = ('127.0.0.1', 58001),
-    timeout: float = 3.0
+    timeout: float = 10.0
 ) -> OrderedDict[int, list[KlineRecord]]:
     """
     Асинхронная внутренняя функция, выполняющая запросы к UDP-серверу.

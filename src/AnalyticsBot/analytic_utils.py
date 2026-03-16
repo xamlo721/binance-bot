@@ -18,6 +18,124 @@ current_alerts: list[AlertRecord] = []
 
 from typing import Dict, List, Optional
 
+def validate_ticker(candle_dict: OrderedDict[int, List[KlineRecord]]) -> OrderedDict[int, List[KlineRecord]]:
+    """
+    Фильтрует тикеры, оставляя только те, у которых данные полны и непротиворечивы.
+    
+    Критерии отбраковки:
+    1. Тикер появился позже (не во всех минутах диапазона)
+    2. Тикер был делистнут (пропал раньше конца диапазона)
+    3. Тикер имеет пропуски данных внутри диапазона
+    4. Тикер имеет нулевые объёмы во всех минутах (мёртвый тикер)
+    5. Тикер имеет отрицательные объёмы (ошибка данных)
+    6. Тикер с битыми/неконсистентными ценами (high < low, open/close вне диапазона)
+    """
+    
+    if not candle_dict:
+        return OrderedDict()
+    
+    # Получаем все минуты в диапазоне
+    all_minutes = list(candle_dict.keys())
+    if not all_minutes:
+        return OrderedDict()
+    
+    # Множество всех тикеров, встречающихся в данных
+    all_tickers = set()
+    ticker_first_seen = {}  # минута первого появления тикера
+    ticker_last_seen = {}   # минута последнего появления тикера
+    ticker_minutes_count = {}  # количество минут, где тикер присутствует
+    ticker_zero_volume_count = {}  # количество минут с нулевым объёмом
+    ticker_invalid_price = set()   # тикеры с некорректными ценами
+    
+    # Проходим по всем минутам для сбора статистики
+    for minute, records in candle_dict.items():
+        for record in records:
+            # Проверка на отрицательные объёмы
+            if record.quote_assets_volume < 0 or record.volume < 0:
+                logger.error(f"Ошибка: отрицательный объём у {record.symbol} в минуте {minute}")
+                ticker_invalid_price.add(record.symbol)
+            
+            # Проверка консистентности цен
+            if record.high < record.low:
+                logger.error(f"Ошибка: high < low у {record.symbol} в минуте {minute}")
+                ticker_invalid_price.add(record.symbol)
+            
+            if record.open < record.low or record.open > record.high:
+                logger.warning(f"Предупреждение: open вне диапазона у {record.symbol} в минуте {minute}")
+                # Можно не отбраковывать строго, но для чистоты добавим в список проблемных
+                ticker_invalid_price.add(record.symbol)
+            
+            if record.close < record.low or record.close > record.high:
+                logger.warning(f"Предупреждение: close вне диапазона у {record.symbol} в минуте {minute}")
+                ticker_invalid_price.add(record.symbol)
+            
+            # Обновляем статистику по тикеру
+            if record.symbol not in ticker_first_seen:
+                ticker_first_seen[record.symbol] = minute
+                ticker_last_seen[record.symbol] = minute
+                ticker_minutes_count[record.symbol] = 1
+                ticker_zero_volume_count[record.symbol] = 1 if record.quote_assets_volume == 0 else 0
+            else:
+                ticker_last_seen[record.symbol] = minute
+                ticker_minutes_count[record.symbol] += 1
+                if record.quote_assets_volume == 0:
+                    ticker_zero_volume_count[record.symbol] += 1
+            
+            all_tickers.add(record.symbol)
+    
+    # Определяем минимальную и максимальную минуту в данных
+    min_minute = min(all_minutes)
+    max_minute = max(all_minutes)
+    expected_minutes_count = len(all_minutes)
+    
+    # Множество валидных тикеров
+    valid_tickers = set()
+    
+    for ticker in all_tickers:
+        # Если тикер уже отмечен как проблемный по ценам – пропускаем
+        if ticker in ticker_invalid_price:
+            logger.info(f"Отбраковка {ticker}: некорректные цены")
+            continue
+        
+        # Проверка 1: Тикер присутствует во всех минутах диапазона
+        if ticker_minutes_count[ticker] != expected_minutes_count:
+            logger.info(f"Отбраковка {ticker}: присутствует только в {ticker_minutes_count[ticker]} из {expected_minutes_count} минут")
+            continue
+        
+        # Проверка 2: Тикер не появился позже и не исчез раньше
+        if ticker_first_seen[ticker] != min_minute:
+            logger.info(f"Отбраковка {ticker}: первое появление {ticker_first_seen[ticker]} (ожидалось {min_minute})")
+            continue
+            
+        if ticker_last_seen[ticker] != max_minute:
+            logger.info(f"Отбраковка {ticker}: последнее появление {ticker_last_seen[ticker]} (ожидалось {max_minute})")
+            continue
+        
+        # Проверка 3: Тикер не состоит полностью из нулевых объёмов
+        if ticker_zero_volume_count[ticker] == expected_minutes_count:
+            logger.info(f"Отбраковка {ticker}: все объёмы нулевые")
+            continue
+        
+        # Проверка 4: Процент нулевых объёмов не слишком высок (опционально)
+        zero_volume_ratio = ticker_zero_volume_count[ticker] / expected_minutes_count
+        if zero_volume_ratio > 0.5:  # больше 50% нулевых объёмов
+            logger.info(f"Отбраковка {ticker}: {zero_volume_ratio:.1%} нулевых объёмов")
+            continue
+        
+        # Если все проверки пройдены, тикер валиден
+        valid_tickers.add(ticker)
+    
+    # Формируем результат, оставляя только валидные тикеры
+    result = OrderedDict()
+    
+    for minute, records in candle_dict.items():
+        filtered_records = [r for r in records if r.symbol in valid_tickers]
+        if filtered_records:  # если после фильтрации остались записи
+            result[minute] = filtered_records
+    
+    logger.info(f"Валидация завершена. Было тикеров: {len(all_tickers)}, стало: {len(valid_tickers)}")
+    return result
+
 def calculate_10m_volumes_slidedWindow(candle_dict: OrderedDict[int, List[KlineRecord]]) -> Optional[List[Volume_10m]]:
     """
     Возвращает список Volume_10m – один объект для каждого тикера,

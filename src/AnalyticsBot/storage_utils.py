@@ -88,13 +88,13 @@ def save_klines_to_ram(results: OrderedDict[int, list[KlineRecord]]):
 
         # Проверка дублирования
         if minute_key in candle_1m_records:
-            logger.debug(f"Минута {minute_key} уже существует, пропускаем")
+            # logger.debug(f"Минута {minute_key} уже существует, пропускаем")
             continue
 
         # Добавляем в глобальный кэш
         candle_1m_records[minute_key] = candles
         added_any = True
-        logger.debug(f"Добавлено {len(candles)} свечей на ключ {minute_key}")
+        # logger.debug(f"Добавлено {len(candles)} свечей на ключ {minute_key}")
 
     if not added_any:
         logger.debug("Не добавлено ни одной новой минуты (все уже существуют)")

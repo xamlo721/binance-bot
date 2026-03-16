@@ -2,19 +2,19 @@ import time
 
 from logger import *
 
-from logic import analyze_stop_loss
-from logic import open_new_positions
-from logic import check_available_position
-from logic import get_position_grow
-from logic import maximise_with_side
-from logic import get_price_from_list
+from TraderBot.logic import analyze_stop_loss
+from TraderBot.logic import open_new_positions
+from TraderBot.logic import check_available_position
+from TraderBot.logic import get_position_grow
+from TraderBot.logic import maximise_with_side
+from TraderBot.logic import get_price_from_list
 
-from binance_utils import get_binance_client
-from binance_utils import get_binance_all_available_futures_tickers
-from binance_utils import get_open_futures_positions
-from binance_utils import open_futures_position
-from binance_utils import move_stop_loss
-from binance_utils import get_futures_sl_order
+from TraderBot.binance_utils import get_binance_client
+from TraderBot.binance_utils import get_binance_all_available_futures_tickers
+from TraderBot.binance_utils import get_open_futures_positions
+from TraderBot.binance_utils import open_futures_position
+from TraderBot.binance_utils import move_stop_loss
+from TraderBot.binance_utils import get_futures_sl_order
 
 from binance.client import Client
 
@@ -22,8 +22,10 @@ from typing import List
 from typing import Dict
 from typing import Optional
 
-from bot_types import AlertRecord
-from network_utils import takeAlerts
+from TraderBot.bot_types import AlertRecord
+from TraderBot.network_utils import takeAlerts
+
+from TraderBot.alert_client import *
 
 active_alerts:  List[AlertRecord] = []
 
@@ -31,6 +33,14 @@ binance_all_available_tickers: List = []
 binance_open_tickers: List[str] = []
 
 all_ticker_prices: Dict
+
+def on_alert(alert: AlertRecord, packet_number: int):
+    print(f"[{packet_number}] {alert.ticker}: {alert.volume} at {alert.time}")
+
+async def run_client():
+    async with AlertClient(alert_callback=on_alert) as client:
+        # Ждём алерты, например, 30 секунд
+        await asyncio.Event().wait()
 
 def print_active_futures_tickers_simple(tickers_list: list):
     logger.info(f"\nАктивные USDT-фьючерсы ({len(tickers_list)} шт.):")
@@ -215,10 +225,12 @@ if __name__ == "__main__":
     try:
         binance_client = get_binance_client()
 
+        asyncio.run(run_client())
+
         while True:
             start_time = time.time()
 
-            do_loop(binance_client)
+            # do_loop(binance_client)
 
             # Вычисляем сколько осталось ждать
             elapsed = time.time() - start_time

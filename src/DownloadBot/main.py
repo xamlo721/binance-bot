@@ -151,7 +151,7 @@ async def main_loop():
         logger.info(f"✅ Получено {len(symbols)} тикеров seconds")
         
         # Берём только первые 10 тикеров (для дебага)
-        symbols = symbols#[:500]
+        symbols = symbols#[:50]
         
         # Скачиваем архивные свечи перед запуском        
         total_requests = len(symbols) * ((MAX_CACHED_CANDLES + MAX_CANDLES_PER_REQUEST - 1) // MAX_CANDLES_PER_REQUEST)
@@ -167,11 +167,12 @@ async def main_loop():
         logger.info(f"Ориентировочно это займет {estimated_minutes * 60} секунд при соблюдении лимитов Binance.")
         await fetch_candles(session, symbols, count = MAX_CACHED_CANDLES)
 
+        logger.info(f"✅ Updated {len(global_data)} tickers!")
         # Создаём UDP сервер, передавая ему ссылку на глобальные данные
         server = UDPMarketDataServer(host='127.0.0.1', port=58001)
         await server.start()                     # ← запуск сервера (неблокирующий)
         logger.info("UDP сервер запущен")
-    
+
         try:
 
             while True:

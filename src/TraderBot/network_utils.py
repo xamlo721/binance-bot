@@ -5,6 +5,7 @@ from logger import *
 
 interprocess_buffer: list[AlertRecord] = []
 
+
 def takeAlerts() -> List[AlertRecord]:
     """
     Извлекает все алерты из буфера и очищает его.

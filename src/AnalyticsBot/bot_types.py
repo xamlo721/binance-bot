@@ -4,6 +4,7 @@ from dataclasses import field
 from typing import Optional
 import pandas as pd
 from datetime import datetime
+from enum import IntEnum
 
 @dataclass
 class KlineRecord:
@@ -87,3 +88,25 @@ class UDPResponse:
     packet_number: int               # номер пакета (4 байта)
     minute_number: int               # номер минуты (4 байта)
     records: list[KlineRecord]       # список записей
+
+
+class AlertMessageType(IntEnum):
+    REGISTER = 1      # клиент -> сервер: запрос на подписку
+    UNREGISTER = 2    # клиент -> сервер: отписка
+    ALERT = 3         # сервер -> клиент: данные алерта
+
+@dataclass
+class AlertRegister:
+    """Сообщение для подписки на алерты"""
+    packet_number: int
+
+@dataclass
+class AlertUnregister:
+    """Сообщение для отписки от алертов"""
+    packet_number: int
+
+@dataclass
+class AlertData:
+    """Сообщение, содержащее сам алерт"""
+    packet_number: int
+    alert: AlertRecord

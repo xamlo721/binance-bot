@@ -9,7 +9,7 @@ class AlertRecord:
     
     # Основные поля
     ticker: str                          # Тикер
-    volume: str                           # Причина/объем (текстовое описание)
+    volume: float                           # Причина/объем (текстовое описание)
     time: int                              # Время события (timestamp в миллисекундах)
     
     # Цены

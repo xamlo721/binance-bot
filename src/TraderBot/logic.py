@@ -1,10 +1,10 @@
 from binance_utils import open_futures_position
 from binance.client import Client
 
-from logger import *
+from TraderBot.logger import *
 
 from typing import List
-from bot_types import AlertRecord
+from TraderBot.bot_types import AlertRecord
 
 def get_price_from_list(ticker: str, all_ticker_prices) -> float:
 

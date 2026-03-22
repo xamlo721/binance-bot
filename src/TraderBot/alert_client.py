@@ -1,13 +1,16 @@
 # alert_client.py
 import asyncio
-import logging
 import random
 from typing import Callable, Optional, Tuple
 
-from AnalyticsBot.bot_types import AlertRecord, AlertRegister, AlertUnregister, AlertData
-from AnalyticsBot.serializer import *
+from TraderBot.bot_types import AlertRecord
+from TraderBot.bot_types import AlertRegister
+from TraderBot.bot_types import AlertUnregister
+from TraderBot.bot_types import AlertData
 
-logger = logging.getLogger(__name__)
+from TraderBot.serializer import *
+
+from TraderBot.logger import logger
 
 class AlertClientProtocol(asyncio.DatagramProtocol):
     def __init__(self, client: 'AlertClient'):
@@ -29,7 +32,7 @@ class AlertClientProtocol(asyncio.DatagramProtocol):
             if self.client.alert_callback:
                 self.client.alert_callback(msg.alert, msg.packet_number)
             else:
-                logger.debug(f"Получен алерт (packet={msg.packet_number}): {msg.alert}")
+                logger.info(f"Получен алерт (packet={msg.packet_number}): {msg.alert}")
         else:
             logger.warning(f"Получено неожиданное сообщение: {type(msg)}")
 

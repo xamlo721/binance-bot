@@ -1,5 +1,19 @@
 import time
 
+from pathlib import Path
+
+import sys
+
+src_path = Path(__file__).resolve().parent.parent
+trader_bot_src_path = Path(__file__).resolve().parent
+sys.path.insert(0, str(src_path))
+sys.path.insert(0, str(trader_bot_src_path))
+
+from TraderBot.logger import logger
+
+logger.debug(str(f"src_path = {src_path}"))
+logger.debug(str(f"trader_bot_src_path = {trader_bot_src_path}"))
+
 from logger import *
 
 from TraderBot.logic import analyze_stop_loss
@@ -23,43 +37,26 @@ from typing import Dict
 from typing import Optional
 
 from TraderBot.bot_types import AlertRecord
-from TraderBot.network_utils import takeAlerts
 
 from TraderBot.alert_client import *
 
 active_alerts:  List[AlertRecord] = []
-
-binance_all_available_tickers: List = []
-binance_open_tickers: List[str] = []
-
-all_ticker_prices: Dict
+incomming_alerts:  List[AlertRecord] = []
 
 def on_alert(alert: AlertRecord, packet_number: int):
     print(f"[{packet_number}] {alert.ticker}: {alert.volume} at {alert.time}")
-
-async def run_client():
-    async with AlertClient(alert_callback=on_alert) as client:
-        # Ждём алерты, например, 30 секунд
-        await asyncio.Event().wait()
+    # incomming_alerts.append(alert)
 
 def print_active_futures_tickers_simple(tickers_list: list):
     logger.info(f"\nАктивные USDT-фьючерсы ({len(tickers_list)} шт.):")
     for i, ticker in enumerate(tickers_list, 1):
         logger.info(f"{i:3}. {ticker}")
 
-def update_binance_data() -> bool:
-    global binance_all_available_tickers 
-    global binance_open_tickers 
-        
-    binance_all_available_tickers = get_binance_all_available_futures_tickers(binance_client)
-    binance_open_tickers = get_open_futures_positions(binance_client)
-
-    return True
-
 def check_for_new_alerts() -> Optional[list[AlertRecord]]:
+    global incomming_alerts 
 
     # Забираем из буфера аналитического бота новые алерты, если они есть
-    alerts: list[AlertRecord] = takeAlerts()
+    alerts: list[AlertRecord] = incomming_alerts
 
     if not alerts or  len(alerts):
         logger.error("Новые сигналы от аналитического бота не найдены не найдены")
@@ -69,14 +66,7 @@ def check_for_new_alerts() -> Optional[list[AlertRecord]]:
 
     return alerts
 
-# -----------------------------------------------------------------------------------------------------------------------------------------
-def check_open_orders(
-    binance_client: Client, 
-    binance_open_tickers: List[str], 
-    all_ticker_prices: Dict, 
-    new_alerts: list[AlertRecord], 
-    positions_info
-):
+def check_open_orders(binance_client: Client, binance_open_tickers: List[str], all_ticker_prices: Dict, new_alerts: list[AlertRecord], positions_info):
     logger.info("-" * 50)
     for i, alert in enumerate(binance_open_tickers, 1):
         # Найти данные позиции по тикеру
@@ -173,74 +163,89 @@ def check_open_orders(
         logger.info("Анализ TP закончен")
         logger.info("-" * 50)
 
-
 def do_loop(binance_client):
     global active_alerts
     global binance_open_tickers
-    global all_ticker_prices
 
-    if not update_binance_data():
-        logger.error("❌   Problem with files. Stopping logic...")
-        return
-    else:
-        logger.info("  binance data updated")
-
-    all_ticker_prices = binance_client.futures_symbol_ticker()
-
-    new_alerts: Optional[list[AlertRecord]] = check_for_new_alerts()
-    if new_alerts is None:
-        logger.error("❌   Problem with files. Stopping logic...")
-        return
-    else:
-        logger.info("  tickers updated")
-
-    available_poss: list[AlertRecord] = check_available_position(active_alerts, new_alerts, binance_open_tickers)
-
-    open_new_positions(
-        binance_client = binance_client, 
-        alerts = available_poss,
-        side = 'BUY',
-        amount_usdt = 10,
-        leverage = 10,
-        stop_lose_pct = 5
-    )
-    
+    logger.info("# ====================== doTick ========================= #")
+    binance_all_available_tickers = get_binance_all_available_futures_tickers(binance_client)
+    binance_open_tickers = get_open_futures_positions(binance_client)
     # Получаем информацию о всех открытых позициях (должна включать entryPrice)
     positions_info = binance_client.futures_position_information()
+    logger.info("Данные binance обновлены.")
 
-    # Выполняем функцию
-    check_open_orders(
-        binance_client, 
-        binance_open_tickers, 
-        all_ticker_prices, 
-        new_alerts,
-        positions_info
-    )
+    # all_ticker_prices = binance_client.futures_symbol_ticker()
 
-    active_alerts.extend(available_poss)
+    # if (len(incomming_alerts) == 0):
+    #     logger.info("Новых алертов не фиксировано.")
+    # else:
+    #     logger.info("Получены новые алерты:")
+    #     for alert in incomming_alerts:
+    #         logger.info(f"Alert = {alert}")
 
+    #     available_poss: list[AlertRecord] = check_available_position(active_alerts, incomming_alerts, binance_open_tickers)
+    #     active_alerts.extend(available_poss)
 
-if __name__ == "__main__":
+    #     open_new_positions(binance_client = binance_client, alerts = available_poss, side = 'BUY', amount_usdt = 10, leverage = 10, stop_lose_pct = 5)
+
+    # # Выполняем функцию
+    # check_open_orders(binance_client, binance_open_tickers, all_ticker_prices, incomming_alerts, positions_info)
+
+    logger.info("# ===================== End Tick ======================== #")
+    logger.info("")
+
+async def periodic_task(binance_client):
+    """Периодически выполняет синхронную do_loop в отдельном потоке."""
+    loop = asyncio.get_running_loop()
+
+    while True:
+
+        start_time = time.time()
+
+        # Выполняем синхронную do_loop в потоке, чтобы не блокировать цикл событий
+        await loop.run_in_executor(None, do_loop, binance_client)
+
+        # Вычисляем сколько осталось ждать
+        elapsed = time.time() - start_time
+        wait_time = max(0, 60 - elapsed)
+
+        logger.info(f"Function took {elapsed:.2f}s, waiting {wait_time:.2f}s")
+        await asyncio.sleep(wait_time)
+
+async def async_init():
+    # Инициализация клиента Binance (синхронная)
+    binance_client = get_binance_client()
+
+    # Создаём и подключаем клиент алертов (не через контекстный менеджер,
+    # чтобы он жил всё время работы программы)
+    alert_client = AlertClient(alert_callback=on_alert)
+    await alert_client.connect()
+    logger.info("AlertClient подключён и ожидает алерты")
+
+    # Запускаем периодическую задачу
+    periodic_task_obj = asyncio.create_task(periodic_task(binance_client))
+
+    # Бесконечно ждём, пока не будет прервано (Ctrl+C)
+    try:
+        await asyncio.Event().wait()
+    except KeyboardInterrupt:
+        logger.info("Получен сигнал прерывания...")
+    finally:
+        # Корректно завершаем задачи
+        periodic_task_obj.cancel()
+        await alert_client.close()
+        logger.info("Клиент отключён")
+
+def main():
 
     try:
-        binance_client = get_binance_client()
-
-        asyncio.run(run_client())
-
-        while True:
-            start_time = time.time()
-
-            # do_loop(binance_client)
-
-            # Вычисляем сколько осталось ждать
-            elapsed = time.time() - start_time
-            wait_time = max(0, 60 - elapsed)  # минимум 0 секунд
-            
-            logger.info(f"Function took {elapsed:.2f}s, waiting {wait_time:.2f}s")
-            
-            if wait_time > 0:
-                time.sleep(wait_time)
-        
+        asyncio.run(async_init())
 
     except ValueError as e:
         logger.error(f"Ошибка: {e}")
+    except KeyboardInterrupt:
+        logger.info("Остановлено пользователем")
+
+        
+if __name__ == "__main__":
+    main()

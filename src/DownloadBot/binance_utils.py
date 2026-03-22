@@ -90,7 +90,7 @@ class BinanceRateLimiter:
 
                 # Ждём, пока истечёт самый старый запрос
                 oldest = self.requests[0][0]
-                wait_time = 60 - (now - oldest)
+                wait_time = 60 - (now - oldest) 
 
                 if wait_time > 0:
                     # Много потоков спамят в консоль, когда стукаются об лимит.
@@ -98,11 +98,11 @@ class BinanceRateLimiter:
                     # У первого задержка в 40-55 секунд, а у остальных 0,0ХХ секунд (зависит от камня)
                     if wait_time > 1:
                         logger.warning(f"Достигнут лимит запросов Binance. Ожидание {wait_time:.2f} секунд...")
-                    await asyncio.sleep(wait_time)
+                    await asyncio.sleep(wait_time + 1)
                     
                 # После ожидания очищаем старые записи
                 now = time.time()
-                while self.requests and self.requests[0][0] < now - 60:
+                while self.requests and self.requests[0][0] <= now - 60:
                     self.requests.popleft()
                         
                 # Пересчитываем общий вес для следующей итерации цикла
@@ -198,6 +198,10 @@ async def fetch_klines_paginated(session: aiohttp.ClientSession, symbol: str, co
                                 # Обновляем end_timestamp для следующего запроса
                                 if data:
                                     current_end = data[0][0] - 1   # <-- ИСПРАВЛЕНО
+                            else:
+                                # Пустой ответ – достигли начала истории
+                                logger.warning(f"⚠️ Для {symbol} нет данных за период {datetime.fromtimestamp(current_end / 1000).strftime('%Y-%m-%d %H:%M:%S')}(пустой ответ).")
+                                break
 
                         else:
                             logger.error(f"❌ Ошибка HTTP {response.status} для {symbol}")

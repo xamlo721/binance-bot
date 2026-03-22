@@ -44,7 +44,7 @@ active_alerts:  List[AlertRecord] = []
 incomming_alerts:  List[AlertRecord] = []
 
 def on_alert(alert: AlertRecord, packet_number: int):
-    print(f"[{packet_number}] {alert.ticker}: {alert.volume} at {alert.time}")
+    print(f"[{packet_number}] {alert.ticker}: TIMEd {alert.time}")
     # incomming_alerts.append(alert)
 
 def print_active_futures_tickers_simple(tickers_list: list):

@@ -192,40 +192,11 @@ class AlertRecordSerializer:
         # Тикер (фиксированная длина, дополняется нулями)
         ticker_bytes = alert.ticker.encode('utf-8')[:AlertRecordSerializer.TICKER_MAX_BYTES].ljust(AlertRecordSerializer.TICKER_MAX_BYTES, b'\x00')
 
-        # Объём (теперь float -> double, 8 байт)
-        volume_bytes = struct.pack('!d', alert.volume)
-
         # Время события (unsigned long long, 8 байт)
         time_bytes = struct.pack('!Q', alert.time)
 
-        # Битовая маска наличия опциональных полей
-        flags = 0
-        if alert.buy_short_price is not None:
-            flags |= 1 << 0
-        if alert.min_price is not None:
-            flags |= 1 << 1
-        if alert.min_price_time is not None:
-            flags |= 1 << 2
-        if alert.max_price is not None:
-            flags |= 1 << 3
-        if alert.max_price_time is not None:
-            flags |= 1 << 4
-        flags_byte = struct.pack('!B', flags)
-
         # Собираем обязательную часть
-        data = ticker_bytes + volume_bytes + time_bytes + flags_byte
-
-        # Опциональные поля в порядке битов
-        if alert.buy_short_price is not None:
-            data += struct.pack('!d', alert.buy_short_price)
-        if alert.min_price is not None:
-            data += struct.pack('!d', alert.min_price)
-        if alert.min_price_time is not None:
-            data += struct.pack('!Q', alert.min_price_time)
-        if alert.max_price is not None:
-            data += struct.pack('!d', alert.max_price)
-        if alert.max_price_time is not None:
-            data += struct.pack('!Q', alert.max_price_time)
+        data = ticker_bytes + time_bytes
 
         return data
 
@@ -251,24 +222,8 @@ class AlertRecordSerializer:
         offset += 1
 
         # Создаём базовый объект
-        alert = AlertRecord(ticker=ticker, volume=volume, time=time)
+        alert = AlertRecord(ticker=ticker, time=time)
 
-        # Опциональные поля
-        if flags & (1 << 0):
-            alert.buy_short_price = struct.unpack('!d', data[offset:offset + 8])[0]
-            offset += 8
-        if flags & (1 << 1):
-            alert.min_price = struct.unpack('!d', data[offset:offset + 8])[0]
-            offset += 8
-        if flags & (1 << 2):
-            alert.min_price_time = struct.unpack('!Q', data[offset:offset + 8])[0]
-            offset += 8
-        if flags & (1 << 3):
-            alert.max_price = struct.unpack('!d', data[offset:offset + 8])[0]
-            offset += 8
-        if flags & (1 << 4):
-            alert.max_price_time = struct.unpack('!Q', data[offset:offset + 8])[0]
-            offset += 8
 
         return alert
     

@@ -81,7 +81,7 @@ class AlertServer:
         for addr in list(self.clients):  # итерируем по копии, т.к. множество может измениться
             try:
                 self.transport.sendto(data, addr)
-                logger.info(f"Алерт отправлен {addr}: {alert.ticker} {alert.volume}")
+                logger.info(f"Алерт отправлен {addr}: {alert.ticker}")
             except Exception as e:
                 logger.error(f"Ошибка отправки клиенту {addr}: {e}")
                 # Возможно, клиент недоступен — можно удалить, но осторожно

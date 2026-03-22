@@ -107,11 +107,6 @@ def getTrackedTickers() -> list[str]:
         return []
     
     # Берём только первые 10 тикеров (для дебага)
-    # symbols = symbols[:10]    
-
-    # for s in symbols:
-    #     print(s)
-
     return symbols#[:500] 
     # return [
     #     "BTCUSDT", 
@@ -134,50 +129,92 @@ def doTick():
     Функция ежеминутного тика
     """
 
-    logger.info("# ====================== doTick ========================= #")
-    logger.info("Обновляем список тикеров...")
+    # ====================== Step 1 ========================= #
+    # Подключаемся к binance и скачиваем оттуда список торговых пар.
+    # TODO: Нужно этот список получать с downloader-а, а не напрямую, для уменьшения количества запросов
+    #
+    # ======================================================= # 
+    logger.debug("Обновляем список тикеров...")
     # TODO: Необходимо отработать моменты, когда отслеживаемые тикеры закрываются для торговли
-    trackable_tickers: list[str] = getTrackedTickers()
-    if len(trackable_tickers) == 0:
+    binance_trackable_tickers: list[str] = getTrackedTickers()
+    if len(binance_trackable_tickers) == 0:
         logger.error("❌ Не удалось получить список тикеров")
         return
-    logger.info(f"✅ Найдено торгующихся тикеров: {len(trackable_tickers)}")
-
+    logger.debug(f"✅ Найдено торгующихся тикеров: {len(binance_trackable_tickers)}")
+    # ====================== Step 2 ========================= #
+    # Подключаемся к серверу и скачиваем оттуда недостающие свечи.
+    # Скачивание идёт до тех пор, пока мы не получим свечи текущей закрытой минуты.
+    # Т.е если сейчас 12:45:15, то мы должны получить свечу за 12:44. Свеча 12:45 ещё формируется 
+    #
     # ======================================================= # 
-
+    logger.debug("Получаем из хранилища последнюю сохранеённую минуту...")
     recent_klines = get_recent_1m_klines(1)          # последние 1 минута
     if recent_klines:
         last_minute_number = max(recent_klines.keys())
         # -1 стоит, потому что в свеча с номером текущей минутой закрывается по мнению бинанса в 00 следующей минуты
         # и чтобы не ломать психику логике ботов, проще тут это учесть
         current_minute_number = int(datetime.now().timestamp() / 60) - 1
+        logger.debug(f"Последняя сохранённая минута: {last_minute_number}. Текущая минута {current_minute_number}")
+        logger.debug(f"Всего в хранилище содержится {len(get_1m_candles())} записей")
 
         if last_minute_number != current_minute_number:          # более чем 1 минута разницы
             missing_minutes = min(current_minute_number - last_minute_number, MAX_CACHED_CANDLES)
             logger.info(f"Найдены {missing_minutes} недостающих минут. Скачиваем...")
 
-            klines_missing: OrderedDict[int, list[KlineRecord]] = download_candles_reccursively(trackable_tickers, missing_minutes)
+            # Как быстро ты скачаешь 60-80мб?
+            klines_missing: OrderedDict[int, list[KlineRecord]] = download_candles_reccursively(binance_trackable_tickers, missing_minutes)
 
             if klines_missing:
                 save_klines_to_ram(klines_missing)
             else:
                 logger.warning("❌ Не удалось загрузить недостающие минутные свечи")
+        else:
+            logger.debug(f"Докачивать данные не требуется.")
+
+    else:
+        logger.error(f"❌ Не удалось получить минутные свечи из хранилища для первичного анализа.")
+        logger.error(f"❌ Попытка восстановить хранилище с помщью сети. Скачиваем  {MAX_CACHED_CANDLES} минут по всем тикерам.")
+
+        # Как быстро ты скачаешь 60-80мб?
+        klines_missing: OrderedDict[int, list[KlineRecord]] = download_candles_reccursively(binance_trackable_tickers, MAX_CACHED_CANDLES)
+
+        if klines_missing:
+            save_klines_to_ram(klines_missing)
+            logger.info(f"✅ Восстановление успешно, данные сохранены.")
+        else:
+            logger.warning("❌ Не удалось загрузить недостающие минутные свечи. Функционирование невозможно.")
+            return
+    # ====================== Step 3 ========================= #
+    # Проверка хранилища на валидность.
+    # На этом этапе надо отсеить все некорректные записи.
+    # Некорректными считаются те записи, по которым нет валидных свечей за период MAX_CACHED_CANDLES
+    # Дальнейшая аналитика проводится ботом только по валидным записям.
+    # 
+    # TODD: Необходим механизм перезапроса у Download сервера данных по указанным свечам, 
+    # TODD: Либо пометка их как временно невалидных. 
+    # TODO: (делистнули или наоброт залистили несколько часов назад)
+    #
     # ======================================================= # 
-
     logger.info(f"Запускаю проверку хранилища на консистентность...")
-    storage_klines: OrderedDict[int, list[KlineRecord]] = get_1m_candles()
-    validated_klines = validate_ticker(storage_klines)    # применяем фильтрацию
+    raw_klines: OrderedDict[int, list[KlineRecord]] = get_1m_candles()
+    validated_klines = validate_ticker(raw_klines)    # применяем фильтрацию
     save_klines_to_ram(validated_klines)
-    logger.info(f"  Проведена валидация хранилища. Пригодно {len(validated_klines)} торговых пар для составления аналитики.")
+    logger.info(f"Проведена валидация хранилища. Пригодно {len(validated_klines)} торговых пар для составления аналитики.")
 
+    logger.debug(f"Проверяем хранили на консистентность...")
     if not is_storage_consistent(validated_klines):
         logger.error("Список candle_1m_records не содержит непрерывный диапазон минутных свечей.")
         return
     
-    logger.info(f"✅ Проверка хранилища успешно пройдена.")
+    logger.debug(f"✅ Проверка хранилища успешно пройдена.")
+    # ====================== Step 4 ========================= #
+    # Расчёт 10ти минутного скользящего окна объёмов.
+    # Защитный интервал не применяется.
+    #
+    # TODO: Нужно дописать проверку, что скользящее окно посчиталось по всем тикерам, что мы туда отправили.
+    #
     # ======================================================= # 
-
-    logger.info(f"Обновляю скользящие 10м объёмы...")
+    logger.debug(f"Обновляю скользящие 10м объёмы...")
     klines_1m: OrderedDict[int, list[KlineRecord]] = get_recent_1m_klines(MAX_CACHED_CANDLES)
     if (len(klines_1m) < 10):
         logger.error(f"❌ Найдено только {len(klines_1m)} минутных свечей в хранилище.")
@@ -189,13 +226,17 @@ def doTick():
         logger.error(f"❌ Ошибка вычисления 10м объёмов. Пропускаем тик.")
         return
 
-    logger.info(f"✅ Обновление 10м интервалов объёмов успешно. Получилось {len(volumes_10m)} маркеров")
-
-
+    logger.debug(f"✅ Обновление 10м интервалов объёмов успешно. Получилось {len(volumes_10m)} маркеров")
+    # ====================== Step 5 ========================= #
+    # Расчёт часовых свечей (записей) окон для всех валидных тикеров.
+    # Защитный интервал не применяется.
+    #
+    # TODO: Нужно покрыть тестами этот этап
+    #
     # ======================================================= # 
-    logger.info(f"Обновляю скользящую часовую статистику...")
+    logger.debug(f"Обновляю скользящую часовую статистику...")
 
-    hours_statistic: Optional[OrderedDict[int, list[HoursRecord]]] = calculate_1h_records(storage_klines)
+    hours_statistic: Optional[OrderedDict[int, list[HoursRecord]]] = calculate_1h_records(validated_klines)
     if hours_statistic is None:
         logger.error(f"❌ Ошибка вычисления часовой статистики. Пропускаем тик.")
         return
@@ -204,58 +245,89 @@ def doTick():
         logger.error(f"❌ Ошибка сохранении часовой статистики в RAM. Пропускаем тик.")
         return
 
-    logger.info(f"✅ Обновление часовой статистики успешно. Получилось {len(hours_statistic)} отметок")
-
+    logger.debug(f"✅ Обновление часовой статистики успешно. Получилось {len(hours_statistic)} отметок")
+    # ====================== Step 6 ========================= #
+    # Расчёт HOURS_VOLUMES_SLIDED_WINDOW_PERIOD часовое скользящее окона объёмов для всех валидных тикеров.
+    # Защитный интервал состовляет HOURS_VOLUMES_PROTECTIVE_INTERVAL минут.
+    # Для корректного расчёта необходимо иметь в хранилище:
+    # HOURS_VOLUMES_SLIDED_WINDOW_PERIOD * 60 + HOURS_VOLUMES_PROTECTIVE_INTERVAL минут записей по всем валидным тикерам.
+    #
+    # TODO: Нужно дописать проверки количества тикеров в хранилище.
+    # FIXME: Не функционирует защитный интервал
+    #
     # ======================================================= # 
-    logger.info(f"Обновляю 10ти часовое скользящее окно объёмов...")
+    logger.debug(f"Обновляю часовое скользящее окно объёмов...")
 
     # Получаем самые свежие часовые файлы
-    h1_records: dict[int, list[HoursRecord]] = get_recent_1h_klines(10)
+    h1_records: dict[int, list[HoursRecord]] = get_recent_1h_klines(HOURS_VOLUMES_SLIDED_WINDOW_PERIOD)
 
-    if h1_records is None or len(h1_records) != 10:
-        logger.error("❌ Не найдено часовых файлов для обработки скользящего окна 10ч. Пропускаем тик.")
+    if h1_records is None or len(h1_records) != HOURS_VOLUMES_SLIDED_WINDOW_PERIOD:
+        logger.error("❌ Не найдено часовых файлов для обработки часового скользящего окна объёмов. Пропускаем тик.")
         return
     
-    volumes_10h: Optional[Dict[str, Dict[str, float]]] = calculate_volumes_slidedWindow(h1_records, 10)
+    volumes_10h: Optional[Dict[str, Dict[str, float]]] = calculate_volumes_slidedWindow(h1_records, HOURS_VOLUMES_SLIDED_WINDOW_PERIOD)
 
     if volumes_10h is None:
-        logger.error(f"❌ Ошибка вычисления 10 часовой статистики. Пропускаем тик.")
+        logger.error(f"❌ Ошибка вычисления часового скользящего окна объёмов. Пропускаем тик.")
         return
 
-    logger.info(f"✅ Обновление 10 часовой статистики успешно. Получилось {len(volumes_10h)} отметок")
+    logger.debug(f"✅ Обновление часового скользящего окна объёмов успешно. Получилось {len(volumes_10h)} отметок")
+    # ====================== Step 7 ========================= #
+    # Расчёт HOURS_PRICES_SLIDED_WINDOW_PERIOD часовых скользящих окон для всех валидных тикеров.
+    # Защитный интервал состовляет HOURS_PRICES_PROTECTIVE_INTERVAL минут.
+    # Для корректного расчёта необходимо иметь в хранилище:
+    # HOURS_PRICES_SLIDED_WINDOW_PERIOD * 60 + HOURS_PRICES_PROTECTIVE_INTERVAL минут записей по всем валидным тикерам.
+    #
+    # TODO: Нужно дописать проверки количества тикеров в хранилище.
+    # FIXME: Не функционирует защитный интервал
+    #
     # ======================================================= # 
-    logger.info(f"Обновляю 12ти часовое скользящее окно цен...")
+    logger.debug(f"Обновляю часовое скользящее окно цен...")
 
-    h1_records: dict[int, list[HoursRecord]] = get_recent_1h_klines(12)
+    h1_records: dict[int, list[HoursRecord]] = get_recent_1h_klines(HOURS_PRICES_SLIDED_WINDOW_PERIOD)
 
-    if h1_records is None or len(h1_records) != 12:
-        logger.error("❌ Не найдено часовых файлов для обработки скользящего окна 10ч. Пропускаем тик.")
+    if h1_records is None or len(h1_records) != HOURS_PRICES_SLIDED_WINDOW_PERIOD:
+        logger.error("❌ Не найдено часовых файлов для обработки скользящего окна цен. Пропускаем тик.")
         return
     
-    max_highs: Optional[Dict[str, float]] = calculate_prices_slidedWindow(h1_records, 12)
+    max_highs: Optional[Dict[str, float]] = calculate_prices_slidedWindow(h1_records, HOURS_PRICES_SLIDED_WINDOW_PERIOD)
 
     if max_highs is None:
-        logger.error("❌ Обработка 12 часовых файлов прошла с ошибкой. Пропускаем тик.")
+        logger.error("❌ Обработка ценового часового окна прошла с ошибкой. Пропускаем тик.")
         return
     
-    logger.info(f"✅ Обновление 12 часовой статистики успешно. Получилось {len(max_highs)} отметок")
+    logger.debug(f"✅ Обновление часового скользящего окна успешно. Получилось {len(max_highs)} отметок")
+    # ====================== Step 8 ========================= #
+    # Проверка превышения текущих отметок цен над верхним порогом скользящего часового окна цен
+    # 
+    # TODO: Нужно проверить тестами на валидность
+    #
     # ======================================================= # 
-    logger.info(f"Проверяю превышение максимумов цен...")
+    logger.debug(f"Проверяю превышение максимумов цен...")
 
     # Список тикеров, у которых превышен лимит на цены
     price_overlimit_tickers = []
 
-    last_minute_key = max(storage_klines.keys())
-    last_minute_candles = storage_klines[last_minute_key]
+    last_minute_key = max(validated_klines.keys())
+    last_minute_candles = validated_klines[last_minute_key]
     price_alerts: Optional[dict[str, float]] = check_price_overlimit(last_minute_candles, max_highs)
 
     if price_alerts is None:
-        logger.error("✅ Проверка закончена. Не зафиксировано превышений.")
+        logger.info("✅ Не зафиксировано выхода за пределы ценового окна.")
     else:
         price_overlimit_tickers = [candle for candle in last_minute_candles if candle.symbol in price_alerts]
-        logger.info(f"✅ Проверка закончена. Зафиксировано {len(price_overlimit_tickers)} превышений")
+        logger.debug(f"✅ Проверка закончена.")
+        logger.info(f"Зафиксирован выход за пределы окна по N = {len(price_overlimit_tickers)} тикерам")
+
+        for ticker, value in price_alerts.items():
+            logger.debug(f"Тикер = {ticker} превысил цену в {value} раз.")
+    # ====================== Step 9 ========================= #
+    # Проверка превышения текущих отметок объёмов над верхним порогом скользящего часового окна цен
+    # 
+    # TODO: Нужно проверить тестами на валидность
+    #
     # ======================================================= # 
-    logger.info(f"Проверяю превышение максимумов объёмов...")
+    logger.debug(f"Проверяю превышение максимумов объёмов...")
 
     volume_alerts: Optional[dict[str, float]] = check_volume_overlimit(price_overlimit_tickers, volumes_10m, volumes_10h)
 
@@ -267,33 +339,39 @@ def doTick():
     else:
         overlimit_tickers = [candle for candle in last_minute_candles if candle.symbol in volume_alerts]
         logger.info(f"✅ Проверка закончена. Зафиксировано {len(overlimit_tickers)} превышений")
+
+    if volume_alerts is None or price_alerts is None:
+        return
+    # ====================== Step 10 ======================== #
+    # Оповещаю подключенных клиентов о новом сигнале и актуальной точке входа в сделку
+    # 
+    # FIXME: Нужно найти как посчитать buy_short_price
+    # FIXME: Нужно найти как посчитать min_price
+    # FIXME: Нужно найти как посчитать min_price_time
+    # FIXME: Нужно найти как посчитать max_price
+    # FIXME: Нужно найти как посчитать max_price_time
+    #
     # ======================================================= # 
+    logger.debug(f"Формируем алерты для отправки...")
+    alerts: List[AlertRecord] = []
+    for kline in overlimit_tickers:
 
+        # Эмуляция появления алерта
+        alert = AlertRecord(
+            ticker = kline.symbol,
+            time = int(datetime.now().timestamp()),
+        )
+        logger.info(f"🔥🔥🔥 Зафиксирован алекрт по тикеру {kline.symbol}  time={alert.time} 🔥🔥🔥")
 
-        for kline in overlimit_tickers:
-            logger.warning(f"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
-            logger.warning(f"XXX Зафиксирован алекрт по тикеру {kline.symbol} XXX")
-            logger.warning(f"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
+        alerts.append(alert)
 
-            # Эмуляция появления алерта
-            alert = AlertRecord(
-                ticker = kline.symbol,
-                volume = volume_alerts[kline.symbol],
-                time = int(datetime.now().timestamp()), 
-                buy_short_price=50000.0,
-                min_price = 460000.0 ,
-                min_price_time = 1234567890000 - 10000,
-                max_price = 52000.0,
-                max_price_time = 1234567890000  - 20000,
-            )
-            logger.info(f"Отправили алерт {alert}")
+    logger.debug(f"Рассылаем алерты клиентам...")
 
-            alert_thread.send_alert(alert)
+    for alert in alerts:
+        alert_thread.send_alert(alert)
+        logger.info(f"🌐 Отправили алерт {alert}")
 
-    logger.info("# ===================== End Tick ======================== #")
-    logger.info("")
-
-    return
+    logger.debug(f"Все алерты разосланы клиентам...")
 
 def main():
 
@@ -334,7 +412,10 @@ def main():
         while True:
             start_time = time.time()
 
+            logger.info("# ====================== doTick ========================= #")
             doTick()
+            logger.info("# ===================== End Tick ======================== #")
+            logger.info("")
 
             # Вычисляем сколько осталось ждать
             elapsed = time.time() - start_time

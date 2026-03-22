@@ -13,8 +13,8 @@ sys.path.insert(0, str(analytics_bot_src_path))
 from AnalyticsBot.logger import logger
 from AnalyticsBot.config import *
 
-logger.debug(str(f"src_path = {src_path}"))
-logger.debug(str(f"analytics_bot_src_path = {analytics_bot_src_path}"))
+logger.info(str(f"src_path = {src_path}"))
+logger.info(str(f"analytics_bot_src_path = {analytics_bot_src_path}"))
 
 from datetime import datetime
 
@@ -23,10 +23,10 @@ from typing import Dict
 from typing import List
 from collections import OrderedDict
 
-from bot_types import AlertRecord
-from bot_types import KlineRecord
-from bot_types import HoursRecord
-from bot_types import Volume_10m
+from AnalyticsBot.bot_types import AlertRecord
+from AnalyticsBot.bot_types import KlineRecord
+from AnalyticsBot.bot_types import HoursRecord
+from AnalyticsBot.bot_types import Volume_10m
 
 from AnalyticsBot.storage_utils import get_recent_1m_klines
 from AnalyticsBot.storage_utils import get_recent_1h_klines
@@ -36,20 +36,20 @@ from AnalyticsBot.storage_utils import save_1h_records
 from AnalyticsBot.storage_utils import save_klines_to_ram
 from AnalyticsBot.storage_utils import is_storage_consistent
 
-from analytic_utils import validate_ticker
-from analytic_utils import calculate_10m_volumes_slidedWindow
-from analytic_utils import calculate_1h_records
-from analytic_utils import calculate_volumes_slidedWindow
-from analytic_utils import calculate_prices_slidedWindow
-from analytic_utils import check_price_overlimit
-from analytic_utils import check_volume_overlimit
+from AnalyticsBot.analytic_utils import validate_ticker
+from AnalyticsBot.analytic_utils import calculate_10m_volumes_slidedWindow
+from AnalyticsBot.analytic_utils import calculate_1h_records
+from AnalyticsBot.analytic_utils import calculate_volumes_slidedWindow
+from AnalyticsBot.analytic_utils import calculate_prices_slidedWindow
+from AnalyticsBot.analytic_utils import check_price_overlimit
+from AnalyticsBot.analytic_utils import check_volume_overlimit
 
-from downloader import download_candles
+from AnalyticsBot.downloader import download_candles
 
-from alert_server import *
+from AnalyticsBot.alert_server import *
+from AnalyticsBot.alert_server_thread import *
 
-server = AlertServer()
-
+alert_thread = AlertServerThread()
 
 def download_candles_reccursively(trackable_tickers: list[str], minutes: int) -> OrderedDict[int, list[KlineRecord]]:
     logger.info(f"✅ Запущено предварительное скачивание архивных данных {minutes} минутных свеч...")
@@ -168,6 +168,7 @@ def doTick():
     storage_klines: OrderedDict[int, list[KlineRecord]] = get_1m_candles()
     validated_klines = validate_ticker(storage_klines)    # применяем фильтрацию
     save_klines_to_ram(validated_klines)
+    logger.info(f"  Проведена валидация хранилища. Пригодно {len(validated_klines)} торговых пар для составления аналитики.")
 
     if not is_storage_consistent(validated_klines):
         logger.error("Список candle_1m_records не содержит непрерывный диапазон минутных свечей.")
@@ -239,12 +240,6 @@ def doTick():
     
     logger.info(f"✅ Обновление 12 часовой статистики успешно. Получилось {len(max_highs)} отметок")
     # ======================================================= # 
-    # "level_breakout_12h.py" -  скрипт, отслеживающий пробой уровня
-    # При появлении нового файла в папке "/srv/ftp/Bot_v2/Data/K_lines/1M" - сравнивает значения максимума цены для каждого тикера с максимумом значения цены в самом свежем файле в папке "/srv/ftp/Bot_v2/Data/Agr_12h"
-    # Если по какому либо тикеру цена в самом свежем файле в папке "/srv/ftp/Bot_v2/Data/K_lines/1M"  - выше чем цена по этому тикеру в самом свежем файле в папке "/srv/ftp/Bot_v2/Data/Agr_12h" - создаёт в папке "/srv/ftp/Bot_v2/Data/Ticker_up" - файл со списком этих тикеров
-    # если файлов результата становится более чем 2 - удаляет самый старый
-    # Скрипт автономный и запускается скриптом "starter.py", а далее самостоятельно отслеживает появление новых файлов в папке "/srv/ftp/Bot_v2/Data/K_lines/1M"  и при появлении свежего файла - делает обработку
-    # ======================================================= # 
     logger.info(f"Проверяю превышение максимумов цен...")
 
     # Список тикеров, у которых превышен лимит на цены
@@ -275,47 +270,43 @@ def doTick():
     # ======================================================= # 
 
 
-    for kline in overlimit_tickers:
-        logger.warning(f"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
-        logger.warning(f"XXX Зафиксирован алекрт по тикеру {kline.symbol} XXX")
-        logger.warning(f"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
+        for kline in overlimit_tickers:
+            logger.warning(f"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
+            logger.warning(f"XXX Зафиксирован алекрт по тикеру {kline.symbol} XXX")
+            logger.warning(f"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
 
-    # Эмуляция появления алерта
-    alert = AlertRecord(
-        ticker="BTCUSDT",
-        volume="Объём превысил 10 млн",
-        time=1234567890000,
-        buy_short_price=50000.0
-    )
-    asyncio.run(server.send_alert(alert, packet_number=1))
+            # Эмуляция появления алерта
+            alert = AlertRecord(
+                ticker = kline.symbol,
+                volume = volume_alerts[kline.symbol],
+                time = int(datetime.now().timestamp()), 
+                buy_short_price=50000.0,
+                min_price = 460000.0 ,
+                min_price_time = 1234567890000 - 10000,
+                max_price = 52000.0,
+                max_price_time = 1234567890000  - 20000,
+            )
+            logger.info(f"Отправили алерт {alert}")
+
+            alert_thread.send_alert(alert)
 
     logger.info("# ===================== End Tick ======================== #")
     logger.info("")
 
     return
 
-# Сервак под алерты
-async def run_server():
-    server = AlertServer()
-    await server.start()
+def main():
+
+    logger.info("Скрипт-стартер запущен.")
 
     try:
-        await asyncio.Event().wait()  # держим сервер запущенным
-    except KeyboardInterrupt:
-        server.stop()
-
-def start():
-    try:
-        logger.info("Скрипт-стартер запущен.")
         logger.info(f"Получаю список актуальных тикеров...")
-
         # TODO: Необходимо отработать моменты, когда отслеживаемые тикеры закрываются для торговли
         trackable_tickers: list[str] = getTrackedTickers()
         if len(trackable_tickers) == 0:
             logger.error("❌ Не удалось получить список тикеров")
             return
         logger.info(f"✅ Найдено торгующихся тикеров: {len(trackable_tickers)}")
-
         
         klines_1m_full: OrderedDict[int, list[KlineRecord]] = download_candles_reccursively(trackable_tickers, MAX_CACHED_CANDLES)
 
@@ -337,7 +328,8 @@ def start():
 
         logger.info(f"Запускаю основной аналитический цикл анализа...")
         
-        asyncio.run(run_server())
+        # Запускаем сервер алертов в фоновом потоке
+        alert_thread.start()
 
         while True:
             start_time = time.time()
@@ -355,8 +347,10 @@ def start():
 
     except KeyboardInterrupt:
         logger.info("Получен сигнал прерывания...")
+        alert_thread.stop()
+        alert_thread.join(timeout=2)
         logger.info("Остановлено пользователем")
 
 
-start()
+main()
 

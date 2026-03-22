@@ -8,7 +8,7 @@ from datetime import datetime
 from udp_client import UDPClient, UDPRequest, UDPResponse
 
 from AnalyticsBot.bot_types import *
-from AnalyticsBot.logger import *
+from AnalyticsBot.logger import logger
 
 async def download_candles(
     trackable_tickers: List[str],

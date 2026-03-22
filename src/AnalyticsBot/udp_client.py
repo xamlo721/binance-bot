@@ -1,12 +1,10 @@
 import asyncio
-import struct
-from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-from AnalyticsBot.logger import *
+from AnalyticsBot.logger import logger
 from AnalyticsBot.config import *
 
-from serializer import UDPRequest, UDPResponse, MessageSerializer
+from AnalyticsBot.serializer import UDPRequest, UDPResponse, MessageSerializer
 
 # ========== Клиент ==========
 class UDPClientProtocol(asyncio.DatagramProtocol):

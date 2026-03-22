@@ -1,17 +1,16 @@
 # alert_server.py
 import asyncio
-import logging
 from typing import Set, Tuple
 
 from AnalyticsBot.bot_types import AlertData, AlertRecord
 from AnalyticsBot.bot_types import AlertRegister
 from AnalyticsBot.bot_types import AlertUnregister
 from AnalyticsBot.serializer import AlertProtocolSerializer
-
-logger = logging.getLogger(__name__)
+from AnalyticsBot.logger import logger
 
 class AlertServerProtocol(asyncio.DatagramProtocol):
     def __init__(self, server: 'AlertServer'):
+        self.packet_numbers = 0
         self.server = server
         self.transport = None
 
@@ -43,21 +42,19 @@ class AlertServerProtocol(asyncio.DatagramProtocol):
         logger.error(f"Ошибка сокета: {exc}")
 
 class AlertServer:
-    def __init__(self, host: str = '127.0.0.1', port: int = 8888):
-        self.host = host
-        self.port = port
+    def __init__(self, ):
         self.clients: Set[Tuple[str, int]] = set()
         self.transport = None
         self.protocol = None
 
-    async def start(self):
+    async def start(self, host: str = '127.0.0.1', port: int = 8888):
         """Запускает UDP сервер."""
         loop = asyncio.get_running_loop()
         self.transport, self.protocol = await loop.create_datagram_endpoint(
             lambda: AlertServerProtocol(self),
-            local_addr=(self.host, self.port)
+            local_addr=(host, port)
         )
-        logger.info(f"AlertServer слушает {self.host}:{self.port}")
+        logger.info(f"AlertServer слушает {host}:{port}")
 
     def stop(self):
         """Останавливает сервер."""
@@ -84,7 +81,7 @@ class AlertServer:
         for addr in list(self.clients):  # итерируем по копии, т.к. множество может измениться
             try:
                 self.transport.sendto(data, addr)
-                logger.debug(f"Алерт отправлен {addr}: {alert.ticker} {alert.volume}")
+                logger.info(f"Алерт отправлен {addr}: {alert.ticker} {alert.volume}")
             except Exception as e:
                 logger.error(f"Ошибка отправки клиенту {addr}: {e}")
                 # Возможно, клиент недоступен — можно удалить, но осторожно

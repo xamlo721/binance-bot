@@ -38,6 +38,7 @@ from AnalyticsBot.storage_utils import is_storage_consistent
 
 from AnalyticsBot.analytic_utils import validate_ticker
 from AnalyticsBot.analytic_utils import calculate_10m_volumes_slidedWindow
+from AnalyticsBot.analytic_utils import isWindow10mValid
 from AnalyticsBot.analytic_utils import calculate_1h_records
 from AnalyticsBot.analytic_utils import calculate_volumes_slidedWindow
 from AnalyticsBot.analytic_utils import calculate_prices_slidedWindow
@@ -210,8 +211,8 @@ def doTick():
     # ====================== Step 4 ========================= #
     # Расчёт 10ти минутного скользящего окна объёмов.
     # Защитный интервал не применяется.
-    #
-    # TODO: Нужно дописать проверку, что скользящее окно посчиталось по всем тикерам, что мы туда отправили.
+    # После вычисления окна, проверяется, что скользящее окно посчиталось 
+    # по всем тикерам, что мы туда отправили.
     #
     # ======================================================= # 
     logger.debug(f"Обновляю скользящие 10м объёмы...")
@@ -220,12 +221,21 @@ def doTick():
         logger.error(f"❌ Найдено только {len(klines_1m)} минутных свечей в хранилище.")
         logger.error(f"❌ Нужно хотя бы 10. Пропускаем тик.")
         return
-    
+
     volumes_10m: Optional[List[Volume_10m]] = calculate_10m_volumes_slidedWindow(klines_1m)
     if volumes_10m is None:
         logger.error(f"❌ Ошибка вычисления 10м объёмов. Пропускаем тик.")
         return
+    
+    # Проверка валидности окна: должны быть данные по всем валидным тикерам
+    # Последняя минута после валидации (validated_klines) содержит все актуальные тикеры
+    last_minute = max(validated_klines.keys())
+    expected_tickers = [c.symbol for c in validated_klines[last_minute]]
 
+    if not isWindow10mValid(volumes_10m, expected_tickers):
+        logger.error("❌ Скользящее окно 10м объёмов не содержит все тикеры. Пропускаем тик.")
+        return
+    
     logger.debug(f"✅ Обновление 10м интервалов объёмов успешно. Получилось {len(volumes_10m)} маркеров")
     # ====================== Step 5 ========================= #
     # Расчёт часовых свечей (записей) окон для всех валидных тикеров.

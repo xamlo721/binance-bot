@@ -449,10 +449,32 @@ def check_price_overlimit(klines: List[KlineRecord], aggregated_highs: dict[str,
         logger.error(f"Ошибка при обработке данных: {e}")
         return None
 
-# Пороговое значение (X раз)
-VOLUME_MULTIPLIER = 5.0
+def isWindow10mValid(volumes_10m: List[Volume_10m], expected_tickers: List[str]) -> bool:
+    """
+    Проверяет, что в рассчитанном 10-минутном окне объёмов присутствуют все ожидаемые тикеры.
 
-def analyze_ticker(ticker: str, volume_10m: Optional[float], volume_10h_list: List[float]) -> bool:
+    Args:
+        volumes_10m: Список объектов Volume_10m, полученный из calculate_10m_volumes_slidedWindow.
+        expected_tickers: Список тикеров, которые должны быть в окне (обычно из последней минуты).
+
+    Returns:
+        True, если все ожидаемые тикеры присутствуют в volumes_10m, иначе False.
+    """
+    if not volumes_10m:
+        logger.error("volumes_10m пуст")
+        return False
+
+    actual_tickers = {v.ticker for v in volumes_10m}
+    expected_set = set(expected_tickers)
+
+    missing = expected_set - actual_tickers
+    if missing:
+        logger.error(f"В 10-минутном окне отсутствуют тикеры: {missing}")
+        return False
+
+    return True
+
+def analyze_ticker(ticker: str, volume_10m_interval: Optional[float], volume_slided_window: List[float]) -> bool:
     """
     Анализирует один тикер по условиям:
     volume_10m * 6 должно превышать каждый элемент volume_10h_list в X_MULTIPLIER раз.

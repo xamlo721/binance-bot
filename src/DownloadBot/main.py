@@ -5,6 +5,7 @@
 каждую минуту скачивает новые данные.
 """
 
+import socket
 import sys
 import time
 import aiohttp
@@ -85,9 +86,9 @@ async def fetch_candles(session: aiohttp.ClientSession, symbols: list[str], coun
 
     # Запрос к Binance: все тикеры за указанное количество минут до `end_timestamp`
     period_data: OrderedDict[int, list[KlineRecord]] = await fetch_klines_for_symbols(session, symbols, count, end_timestamp)
-    #logger.info(f"fetch вернул {len(period_data)} отметок")
+    logger.debug(f"fetch вернул {len(period_data)} отметок")
 
-    #logger.info(f"До сохранения там {len(global_data)} отметок")
+    logger.debug(f"До сохранения там {len(global_data)} отметок")
     # Сохраняем свечи по абсолютному номеру минуты
     for minute_key, records in period_data.items():
         # Если минута уже существует, добавляем записи (предполагаем, что дубликатов нет)
@@ -95,7 +96,7 @@ async def fetch_candles(session: aiohttp.ClientSession, symbols: list[str], coun
             global_data[minute_key].extend(records)
         else:
             global_data[minute_key] = records
-    #logger.info(f"После сохранения в global_data {len(global_data)} минут")
+    logger.debug(f"После сохранения в global_data {len(global_data)} минут")
 
 def cleanup_storage(storage_imit: int):
     # Убираем старые данные – оставляем только последние 1440 минут
@@ -136,12 +137,24 @@ def check_space(now_ms: int) -> int:
     else:
         return last_completed_minute - last_stored_minute
 
+def create_session():
+    connector = aiohttp.TCPConnector(
+        resolver=aiohttp.resolver.AsyncResolver(),
+        family=socket.AF_INET,
+        limit=0,  # отключаем лимит на количество соединений, чтобы не мешать rate limiter
+        use_dns_cache=True,
+        ttl_dns_cache=600  # кэшировать DNS на 5 минут
+    )
+    # Увеличиваем общий таймаут и таймаут подключения
+    timeout = aiohttp.ClientTimeout(total=30, connect=15)
+    return aiohttp.ClientSession(connector=connector, timeout=timeout)
+
 async def main_loop():
     """
     Main loop: update last candles and fetch new minute candles every minute.
     """
-    
-    async with aiohttp.ClientSession() as session:  # ← создаём сессию
+        
+    async with create_session() as session:
         
         logger.info(f"Обновляем список тикеров")
         symbols = get_trading_symbols()
@@ -151,7 +164,7 @@ async def main_loop():
         logger.info(f"✅ Получено {len(symbols)} тикеров seconds")
         
         # Берём только первые 10 тикеров (для дебага)
-        symbols = symbols#[:50]
+        symbols = symbols# [:50]
         
         # Скачиваем архивные свечи перед запуском        
         total_requests = len(symbols) * ((MAX_CACHED_CANDLES + MAX_CANDLES_PER_REQUEST - 1) // MAX_CANDLES_PER_REQUEST)

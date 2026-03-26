@@ -84,8 +84,8 @@ class UDPServerProtocol(asyncio.DatagramProtocol):
             # Отправляем ответ
             try:
                 self.transport.sendto(response_data, addr)
-                logger.info(f"Отправлен ответ для {addr}: packet={response.packet_number}, minute={response.minute_number}, tickers={len(records)}.")
-                logger.info(f"Размер ответа для минуты {request.minute_number}: {len(response_data)} байт")
+                logger.debug(f"Отправлен ответ для {addr}: packet={response.packet_number}, minute={response.minute_number}, tickers={len(records)}.")
+                logger.debug(f"Размер ответа для минуты {request.minute_number}: {len(response_data)} байт")
 
             except AttributeError as e:
                 logger.error(f"Ошибка отправки: транспорт не поддерживает sendto - {e}")

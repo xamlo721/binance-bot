@@ -15,4 +15,9 @@ HOURS_PRICES_SLIDED_WINDOW_PERIOD = 12
 
 # Защитный интервал минут, которые следует исключить из расчёта часовых интервалов ЦЕН
 # Задаётся в количестве минут (шт)
-HOURS_PRICES_PROTECTIVE_INTERVAL = 60
+HOURS_PRICES_PROTECTIVE_INTERVAL = 1
+
+# Пороговое значение (X раз)
+VOLUME_MULTIPLIER = 5.0
+
+VOLUME_LIMIT_MULTIPLIER = 6.0

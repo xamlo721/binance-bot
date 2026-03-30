@@ -68,7 +68,11 @@ class AlertRecord:
     ticker: str                          # Тикер
     time: int                              # Время события (timestamp в миллисекундах)
 
-    
+class ResponseStatus(IntEnum):
+    OK = 0
+    NOT_FOUND = 1
+    BUSY = 2
+
 @dataclass
 class UDPRequest:
     """Структура запроса к UDP серверу"""
@@ -80,6 +84,7 @@ class UDPResponse:
     """Структура ответа от UDP сервера"""
     packet_number: int               # номер пакета (4 байта)
     minute_number: int               # номер минуты (4 байта)
+    status: int               # код статуса (0=успех, 1=минута не найдена, 2=сервер занят)
     records: list[KlineRecord]       # список записей
 
 

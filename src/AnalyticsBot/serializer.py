@@ -10,14 +10,20 @@ class MessageSerializer:
     """Класс для бинарной сериализации сообщений"""
     
     # Формат заголовка: packet_number (I), minute_number (I)
-    HEADER_FORMAT = '!II'  # ! означает сетевой порядок байт (big-endian)
-    HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
+    # ! означает сетевой порядок байт (big-endian)
+    # 12 байт
+    REQUEST_HEADER_FORMAT = '!II'
+    REQUEST_HEADER_SIZE = struct.calcsize(REQUEST_HEADER_FORMAT)
+
+    # Формат ответа: packet_number (I), minute_number (I), status (I) — 12 байт
+    RESPONSE_HEADER_FORMAT = '!III'
+    RESPONSE_HEADER_SIZE = struct.calcsize(RESPONSE_HEADER_FORMAT)
     
     @staticmethod
     def serialize_request(request: UDPRequest) -> bytes:
         """Сериализация запроса в бинарный формат"""
         return struct.pack(
-            MessageSerializer.HEADER_FORMAT,
+            MessageSerializer.REQUEST_HEADER_FORMAT,
             request.packet_number,
             request.minute_number
         )
@@ -26,12 +32,12 @@ class MessageSerializer:
     def deserialize_request(data: bytes) -> Optional[UDPRequest]:
         """Десериализация запроса из бинарных данных"""
         try:
-            if len(data) < MessageSerializer.HEADER_SIZE:
+            if len(data) < MessageSerializer.REQUEST_HEADER_SIZE:
                 return None
                 
             packet_number, minute_number = struct.unpack(
-                MessageSerializer.HEADER_FORMAT,
-                data[:MessageSerializer.HEADER_SIZE]
+                MessageSerializer.REQUEST_HEADER_FORMAT,
+                data[:MessageSerializer.REQUEST_HEADER_SIZE]
             )
             
             return UDPRequest(
@@ -46,9 +52,10 @@ class MessageSerializer:
         """Сериализация ответа в бинарный формат"""
         # Сериализуем заголовок
         header = struct.pack(
-            MessageSerializer.HEADER_FORMAT,
+            MessageSerializer.RESPONSE_HEADER_FORMAT,
             response.packet_number,
-            response.minute_number
+            response.minute_number,
+            response.status
         )
 
         # Сериализуем записи компактно
@@ -65,24 +72,24 @@ class MessageSerializer:
     @staticmethod
     def deserialize_response(data: bytes) -> Optional[UDPResponse]:
         """Десериализация ответа из бинарных данных"""
-        if len(data) < MessageSerializer.HEADER_SIZE + 4:
+        if len(data) < MessageSerializer.RESPONSE_HEADER_SIZE + 4:
             return None
 
-        # Заголовок
-        packet_number, minute_number = struct.unpack(
-            MessageSerializer.HEADER_FORMAT,
-            data[:MessageSerializer.HEADER_SIZE]
+        # Заголовок (packet, minute, status)
+        packet_number, minute_number, status = struct.unpack(
+            MessageSerializer.RESPONSE_HEADER_FORMAT,
+            data[:MessageSerializer.RESPONSE_HEADER_SIZE]
         )
 
         # Длина сжатых данных
-        compressed_len = struct.unpack('!I', data[MessageSerializer.HEADER_SIZE:MessageSerializer.HEADER_SIZE+4])[0]
+        compressed_len = struct.unpack('!I', data[MessageSerializer.RESPONSE_HEADER_SIZE:MessageSerializer.RESPONSE_HEADER_SIZE+4])[0]
 
         # Проверяем, что данных достаточно
-        if len(data) < MessageSerializer.HEADER_SIZE + 4 + compressed_len:
+        if len(data) < MessageSerializer.RESPONSE_HEADER_SIZE + 4 + compressed_len:
             return None
 
         # Извлекаем сжатые данные
-        compressed_data = data[MessageSerializer.HEADER_SIZE+4:MessageSerializer.HEADER_SIZE+4+compressed_len]
+        compressed_data = data[MessageSerializer.RESPONSE_HEADER_SIZE+4:MessageSerializer.RESPONSE_HEADER_SIZE+4+compressed_len]
 
         try:
             # Распаковываем
@@ -96,8 +103,10 @@ class MessageSerializer:
         return UDPResponse(
             packet_number=packet_number,
             minute_number=minute_number,
+            status=status,
             records=records
         )
+    
 
 import struct
 import zlib

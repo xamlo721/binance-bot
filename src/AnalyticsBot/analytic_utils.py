@@ -477,30 +477,29 @@ def isWindow10mValid(volumes_10m: List[Volume_10m], expected_tickers: List[str])
 def analyze_ticker(ticker: str, volume_10m_interval: Optional[float], volume_slided_window: List[float]) -> bool:
     """
     Анализирует один тикер по условиям:
-    volume_10m * 6 должно превышать каждый элемент volume_10h_list в X_MULTIPLIER раз.
+    volume_10m_interval * 6 должно превышать каждый элемент volume_10h_list в X_MULTIPLIER раз.
 
     Args:
         ticker: Символ тикера
-        volume_10m: Значение volume_10m для тикера (может быть None)
+        volume_10m_interval: Значение volume_10m_interval для тикера (может быть None)
         volume_10h_list: Список из 10 значений total_volume для тикера из разных часов
 
     Returns:
         bool True/False
     """
-    if volume_10m is None:
-        logger.error(f"❌ Нет данных volume_10m")
+    if volume_10m_interval is None:
+        logger.error(f"❌ Нет данных volume_10m_interval")
         return False
 
-    # Умножаем volume_10m на 6
-    multiplied_volume = volume_10m * 6
+    multiplied_volume = volume_10m_interval * VOLUME_LIMIT_MULTIPLIER
 
-    if not volume_10h_list or len(volume_10h_list) < 10:
-        logger.error(f"❌ Недостаточно данных volume_10h")
+    if not volume_slided_window or len(volume_slided_window) < HOURS_VOLUMES_SLIDED_WINDOW_PERIOD:
+        logger.error(f"❌ Недостаточно данных volume_slided_window")
         return False
 
     # Проверяем условие для каждого часа
     min_ratio = float('inf')
-    for idx, vol_10h in enumerate(volume_10h_list, 1):
+    for idx, vol_10h in enumerate(volume_slided_window, 1):
         if vol_10h <= 0:
             logger.error(f"❌ total_volume_{idx} <= 0 ({vol_10h})")
             return False

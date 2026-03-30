@@ -10,13 +10,7 @@ from udp_client import UDPClient, UDPRequest, UDPResponse
 from AnalyticsBot.bot_types import *
 from AnalyticsBot.logger import logger
 
-async def download_candles(
-    trackable_tickers: List[str],
-    minutes: int,
-    end_time: datetime,
-    server_addr: tuple = ('127.0.0.1', 58001),
-    timeout: float = 10.0
-) -> OrderedDict[int, list[KlineRecord]]:
+async def download_candles(trackable_tickers: List[str], minutes: int, end_time: datetime, server_addr: tuple = ('127.0.0.1', 58001), timeout: float = 10.0 ) -> OrderedDict[int, list[KlineRecord]]:
     """
     Асинхронная внутренняя функция, выполняющая запросы к UDP-серверу.
     Возвращает список списков KlineRecord, сгруппированных по тикерам.
@@ -40,9 +34,23 @@ async def download_candles(
                         server_addr=server_addr,
                         timeout=timeout
                     )
-                    # Фильтруем записи только по интересующим тикерам
-                    filtered = [rec for rec in response.records if rec.symbol in trackable_tickers]
-                    result[minute] = filtered
+                    # Обрабатываем статус ответа
+                    if response.status == ResponseStatus.OK:
+                        # Фильтруем записи только по интересующим тикерам
+                        filtered = [rec for rec in response.records if rec.symbol in trackable_tickers]
+                        result[minute] = filtered
+                        break  # успешно
+                    elif response.status == ResponseStatus.BUSY:
+                        logger.warning(f"Сервер занят, попытка {attempt+1} для минуты {minute}")
+                        await asyncio.sleep(10)  # ждём 10 секунду перед повтором
+                        attempt = attempt - 1
+                        continue
+                    elif response.status == ResponseStatus.NOT_FOUND:
+                        logger.warning(f"Минута {minute} не найдена на сервере, пропускаем")
+                        break  # не повторяем, данных нет
+                    else:
+                        logger.error(f"Неизвестный статус {response.status} для минуты {minute}, пропускаем")
+                        break
 
 
                     break  # успешно, выходим из цикла попыток

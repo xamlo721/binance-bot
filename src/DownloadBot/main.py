@@ -191,6 +191,7 @@ async def main_loop():
             while True:
                 tick_start_time = time.time()
                 now_ms = int(time.time() * 1000)
+                server.set_busy(True)          # <- сервер занят
 
                 missing = check_space(now_ms)
 
@@ -209,6 +210,7 @@ async def main_loop():
                 elapsed = time.time() - tick_start_time
                 wait_time = max(0, 3 - elapsed)  # минимум 0 секунд
 
+                server.set_busy(False)         # <- освобождаем
                 if missing != 0:
                     logger.info(f"✅ Updated {len(global_data)} tickers for {elapsed:.2f} seconds")
 

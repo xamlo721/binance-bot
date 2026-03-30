@@ -14,6 +14,7 @@ class UDPMarketDataServer:
         self.global_data: OrderedDict[int, list[KlineRecord]] = OrderedDict()
         self.serializer = MessageSerializer()
         self.transport = None
+        self.is_busy = False   # флаг занятости
         
     async def start(self):
         """Запуск UDP сервера"""
@@ -36,6 +37,10 @@ class UDPMarketDataServer:
     def update_data(self, new_data: OrderedDict[int, list[KlineRecord]]):
         """Обновление данных (вызывается при поступлении новых данных)"""
         self.global_data = new_data
+        
+    def set_busy(self, busy: bool):
+        """Установка флага занятости сервера"""
+        self.is_busy = busy
 
 class UDPServerProtocol(asyncio.DatagramProtocol):
     def __init__(self, server: UDPMarketDataServer):
@@ -48,49 +53,54 @@ class UDPServerProtocol(asyncio.DatagramProtocol):
     def datagram_received(self, data: bytes, addr):
         """Обработка входящего датаграмма"""
         try:
-            # Проверяем, что транспорт инициализирован
             if self.transport is None:
                 logger.error(f"Ошибка: транспорт не инициализирован для запроса от {addr}")
                 return
-                
-            # Десериализуем запрос
+
             request = self.server.serializer.deserialize_request(data)
-            
             if request is None:
                 logger.error(f"Получен некорректный запрос от {addr}")
                 return
-                
-            logger.info(f"Запрос от {addr}: packet={request.packet_number}, minute={request.minute_number}")
-            
-            if (request.minute_number not in self.server.global_data.keys()):
-                logger.warning(f"Запрос от {addr}: packet={request.packet_number}, minute={request.minute_number}")
-                logger.warning(f"Запрошеной минуты в хранилище не обнаружено.")
 
-                # TODO: вернуть клиенту код отсутствия 
+            logger.info(f"Запрос от {addr}: packet={request.packet_number}, minute={request.minute_number}")
+
+            # Проверяем, занят ли сервер
+            if self.server.is_busy:
+                logger.info(f"Сервер занят, отправляем статус BUSY для {addr}")
+                response = UDPResponse(
+                    packet_number=request.packet_number,
+                    minute_number=request.minute_number,
+                    status=ResponseStatus.BUSY,   # код "сервер занят"
+                    records=[]
+                )
+                response_data = self.server.serializer.serialize_response(response)
+                self.transport.sendto(response_data, addr)
                 return
 
-            # Получаем данные за запрошенную минуту
-            records: list[KlineRecord] = self.server.global_data.get(request.minute_number, [])
-            
-            # Формируем и отправляем ответ
+            # Проверяем наличие данных за запрошенную минуту
+            if request.minute_number not in self.server.global_data:
+                logger.warning(f"Запрошенная минута {request.minute_number} отсутствует в хранилище")
+                response = UDPResponse(
+                    packet_number=request.packet_number,
+                    minute_number=request.minute_number,
+                    status=ResponseStatus.NOT_FOUND,   # код "минута не найдена"
+                    records=[]
+                )
+                response_data = self.server.serializer.serialize_response(response)
+                self.transport.sendto(response_data, addr)
+                return
+
+            # Успешный случай
+            records = self.server.global_data.get(request.minute_number, [])
             response = UDPResponse(
                 packet_number=request.packet_number,
                 minute_number=request.minute_number,
+                status=ResponseStatus.OK,   # успех
                 records=records
             )
-            
             response_data = self.server.serializer.serialize_response(response)
-            
-            # Отправляем ответ
-            try:
-                self.transport.sendto(response_data, addr)
-                logger.debug(f"Отправлен ответ для {addr}: packet={response.packet_number}, minute={response.minute_number}, tickers={len(records)}.")
-                logger.debug(f"Размер ответа для минуты {request.minute_number}: {len(response_data)} байт")
+            self.transport.sendto(response_data, addr)
+            logger.debug(f"Отправлен ответ для {addr}: packet={response.packet_number}, minute={response.minute_number}, tickers={len(records)}.")
 
-            except AttributeError as e:
-                logger.error(f"Ошибка отправки: транспорт не поддерживает sendto - {e}")
-            except Exception as e:
-                logger.error(f"Ошибка отправки данных: {e}")
-            
         except Exception as e:
             logger.error(f"Ошибка обработки запроса от {addr}: {e}")

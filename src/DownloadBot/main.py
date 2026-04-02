@@ -139,7 +139,7 @@ def check_space(now_ms: int) -> int:
 
 def create_session():
     connector = aiohttp.TCPConnector(
-        resolver=aiohttp.resolver.AsyncResolver(),
+        resolver=aiohttp.resolver.AsyncResolver(nameservers=["8.8.8.8", "1.1.1.1", "208.67.222.222"]),
         family=socket.AF_INET,
         limit=0,  # отключаем лимит на количество соединений, чтобы не мешать rate limiter
         use_dns_cache=True,
@@ -193,14 +193,36 @@ async def main_loop():
                 now_ms = int(time.time() * 1000)
                 server.set_busy(True)          # <- сервер занят
 
+
                 missing = check_space(now_ms)
 
                 if missing > 1:
                     logger.info(f"Обнаружено пропущенных минут: {missing}. Догоняем...")
+
+                    # ==================================================================== # 
+                    logger.info(f"Обновляем список тикеров")
+                    symbols = get_trading_symbols()
+                    if not symbols:
+                        logger.error("Не удалось получить список тикеров")
+                        continue
+                    logger.info(f"✅ Получено {len(symbols)} тикеров")
+                    # ==================================================================== # 
+
                     await fetch_candles(session, symbols, missing)
                     cleanup_storage(MAX_CACHED_CANDLES)
                     server.update_data(global_data)
                 elif (missing == 1):
+
+                    # ==================================================================== # 
+                    logger.info(f"Обновляем список тикеров")
+                    symbols = get_trading_symbols()
+                    if not symbols:
+                        logger.error("Не удалось получить список тикеров")
+                        continue
+                    logger.info(f"✅ Получено {len(symbols)} тикеров")
+                    # ==================================================================== # 
+
+
                     logger.info("Обновляем свечи за текущую минуту.")
                     await fetch_candles(session, symbols, 1)
                     cleanup_storage(MAX_CACHED_CANDLES)
@@ -212,7 +234,7 @@ async def main_loop():
 
                 server.set_busy(False)         # <- освобождаем
                 if missing != 0:
-                    logger.info(f"✅ Updated {len(global_data)} tickers for {elapsed:.2f} seconds")
+                    logger.info(f"✅ Updated {len(global_data)} / {len(symbols)} tickers for {elapsed:.2f} seconds")
 
                 await asyncio.sleep(wait_time)
         finally:

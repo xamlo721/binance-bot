@@ -140,11 +140,12 @@ def check_space(now_ms: int) -> int:
 
 def create_session():
     connector = aiohttp.TCPConnector(
-        resolver=aiohttp.resolver.AsyncResolver(nameservers=["8.8.8.8", "1.1.1.1", "208.67.222.222"]),
+        resolver = aiohttp.resolver.ThreadedResolver(),
+        # resolver=aiohttp.resolver.AsyncResolver(nameservers=["8.8.8.8", "1.1.1.1", "208.67.222.222"]),
         family=socket.AF_INET,
-        limit=0,  # отключаем лимит на количество соединений, чтобы не мешать rate limiter
+        limit=0,
         use_dns_cache=True,
-        ttl_dns_cache=600  # кэшировать DNS на 5 минут
+        ttl_dns_cache=600
     )
     # Увеличиваем общий таймаут и таймаут подключения
     timeout = aiohttp.ClientTimeout(total=30, connect=15)

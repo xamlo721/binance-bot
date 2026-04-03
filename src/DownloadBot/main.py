@@ -23,6 +23,7 @@ sys.path.append(str(download_bot_src_path))
 
 from binance_utils import get_trading_symbols
 from binance_utils import fetch_klines_for_symbols
+from DownloadBot.binance_limiter import BinanceRateLimiter
 
 from bot_types import KlineRecord
 
@@ -75,7 +76,7 @@ def is_storage_consistent(candle_dict: dict[int, list[KlineRecord]]) -> bool:
 
     return True
 
-async def fetch_candles(session: aiohttp.ClientSession, symbols: list[str], count: int = 1440) -> None:
+async def fetch_candles(session: aiohttp.ClientSession, symbols: list[str], limiter: BinanceRateLimiter, count: int = 1440) -> None:
     """
     Получаем последние `count` минут (по умолчанию 24 часа) и сохраняем их в глобальном хранилище.
     """
@@ -85,7 +86,7 @@ async def fetch_candles(session: aiohttp.ClientSession, symbols: list[str], coun
     end_timestamp = now_timestamp - (now_timestamp % 60000) - 1
 
     # Запрос к Binance: все тикеры за указанное количество минут до `end_timestamp`
-    period_data: OrderedDict[int, list[KlineRecord]] = await fetch_klines_for_symbols(session, symbols, count, end_timestamp)
+    period_data: OrderedDict[int, list[KlineRecord]] = await fetch_klines_for_symbols(session, symbols, limiter, count, end_timestamp)
     logger.debug(f"fetch вернул {len(period_data)} отметок")
 
     logger.debug(f"До сохранения там {len(global_data)} отметок")
@@ -156,6 +157,8 @@ async def main_loop():
         
     async with create_session() as session:
         
+        limiter = BinanceRateLimiter(BINANCE_API_REQUEST_LIMIT, BINANCE_API_WEIGHT_LIMIT)
+
         logger.info(f"Обновляем список тикеров")
         symbols = get_trading_symbols()
         if not symbols:
@@ -178,7 +181,12 @@ async def main_loop():
         logger.info(f"Скачиваем {MAX_CACHED_CANDLES} минутных отметок по каждому тикеру. .")
         logger.info(f"Всего {MAX_CACHED_CANDLES * len(symbols)} свечей. Понадобится {total_requests} запросов.")
         logger.info(f"Ориентировочно это займет {estimated_minutes * 60} секунд при соблюдении лимитов Binance.")
-        await fetch_candles(session, symbols, count = MAX_CACHED_CANDLES)
+        await fetch_candles(
+            session = session, 
+            symbols = symbols, 
+            limiter = limiter, 
+            count = MAX_CACHED_CANDLES
+        )
 
         logger.info(f"✅ Updated {len(global_data)} tickers!")
         # Создаём UDP сервер, передавая ему ссылку на глобальные данные
@@ -208,9 +216,16 @@ async def main_loop():
                     logger.info(f"✅ Получено {len(symbols)} тикеров")
                     # ==================================================================== # 
 
-                    await fetch_candles(session, symbols, missing)
+                    await fetch_candles(
+                        session = session, 
+                        symbols = symbols, 
+                        limiter = limiter,  
+                        count = missing
+                    )
+
                     cleanup_storage(MAX_CACHED_CANDLES)
                     server.update_data(global_data)
+
                 elif (missing == 1):
 
                     # ==================================================================== # 
@@ -224,7 +239,12 @@ async def main_loop():
 
 
                     logger.info("Обновляем свечи за текущую минуту.")
-                    await fetch_candles(session, symbols, 1)
+                    await fetch_candles(
+                        session = session, 
+                        symbols = symbols, 
+                        limiter = limiter,  
+                        count = 1
+                    )
                     cleanup_storage(MAX_CACHED_CANDLES)
                     server.update_data(global_data)
 

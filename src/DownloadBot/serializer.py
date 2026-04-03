@@ -1,6 +1,5 @@
 import struct
-import pickle
-from typing import Tuple, Optional
+from typing import Optional
 
 from bot_types import *
 

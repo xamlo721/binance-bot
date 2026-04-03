@@ -171,7 +171,7 @@ async def main_loop(limiter: BinanceRateLimiter, session: aiohttp.ClientSession,
 
                 # ==================================================================== # 
                 logger.info(f"Обновляем список тикеров")
-                symbols = get_trading_symbols()
+                symbols = await get_trading_symbols(session)
                 if not symbols:
                     logger.error("Не удалось получить список тикеров")
                     continue
@@ -217,7 +217,7 @@ async def main():
         async with create_session() as session:
 
             logger.info(f"Обновляем список тикеров")
-            symbols = get_trading_symbols()
+            symbols = await get_trading_symbols(session)
             if not symbols:
                 logger.error("Не удалось получить список тикеров")
                 return

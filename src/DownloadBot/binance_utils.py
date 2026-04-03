@@ -18,25 +18,38 @@ from DownloadBot.binance_limiter import get_kline_weight
 from DownloadBot.binance_limiter import BinanceRateLimiter
 
 
-def get_trading_symbols():
+async def get_trading_symbols(session: aiohttp.ClientSession) -> list[str]:
     """Получение списка торгующихся тикеров"""
+    """Асинхронное получение списка торгующихся тикеров с повторными попытками"""
     url = "https://fapi.binance.com/fapi/v1/exchangeInfo"
-    try:
-        response = requests.get(url)
-        data = response.json()
-        
-        symbols = []
-        for symbol_info in data['symbols']:
-            if (symbol_info['status'] == 'TRADING' and symbol_info.get('contractType') == 'PERPETUAL'):
-                # Исключаем тикеры с "USDC"
-                symbol_name = symbol_info['symbol']
-                if not symbol_name.startswith("USDC") and not symbol_name.endswith("USDC"):
-                    symbols.append(symbol_name)
-        
-        return symbols
-    except Exception as e:
-        logger.error(f"Ошибка при получении списка тикеров: {str(e)}")
-        return []
+    max_retries = 3
+    
+    for attempt in range(max_retries):
+        try:
+            
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    symbols = []
+                    for symbol_info in data['symbols']:
+                        if (symbol_info['status'] == 'TRADING' and 
+                            symbol_info.get('contractType') == 'PERPETUAL'):
+                            symbol_name = symbol_info['symbol']
+                            if not symbol_name.startswith("USDC") and not symbol_name.endswith("USDC"):
+                                symbols.append(symbol_name)
+                    logger.info(f"✅ Получено {len(symbols)} тикеров через асинхронный запрос")
+                    return symbols
+                else:
+                    logger.warning(f"HTTP {response.status} при получении списка тикеров, попытка {attempt+1}")
+
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            logger.warning(f"Ошибка при получении списка тикеров (попытка {attempt+1}): {e}")
+            if attempt == max_retries - 1:
+                logger.error("Не удалось получить список тикеров после всех попыток")
+                return []
+            await asyncio.sleep(2 ** attempt)  # экспоненциальная задержка
+
+    return []
 
 # ============== Модифицированные функции с ограничением ==============
 

@@ -2,9 +2,10 @@ import threading
 import asyncio
 import time
 from alert_server import AlertServer
+from config import *
 
 class AlertServerThread(threading.Thread):
-    def __init__(self, host='127.0.0.1', port=8888):
+    def __init__(self, host=ALERT_SERVER_IP, port=ALERT_SERVER_PORT):
         super().__init__(daemon=True)  # поток-демон завершится при выходе из main
         self.host = host
         self.port = port

@@ -9,8 +9,9 @@ from udp_client import UDPClient, UDPRequest, UDPResponse
 
 from AnalyticsBot.bot_types import *
 from AnalyticsBot.logger import logger
+from AnalyticsBot.config import *
 
-async def download_candles(trackable_tickers: List[str], minutes: int, end_time: datetime, server_addr: tuple = ('127.0.0.1', 58001), timeout: float = 10.0 ) -> OrderedDict[int, list[KlineRecord]]:
+async def download_candles(trackable_tickers: List[str], minutes: int, end_time: datetime, server_addr: tuple = (DOWNLOAD_SERVER_IP, DOWNLOAD_SERVER_PORTL), timeout: float = 10.0 ) -> OrderedDict[int, list[KlineRecord]]:
     """
     Асинхронная внутренняя функция, выполняющая запросы к UDP-серверу.
     Возвращает список списков KlineRecord, сгруппированных по тикерам.
@@ -47,6 +48,7 @@ async def download_candles(trackable_tickers: List[str], minutes: int, end_time:
                         continue
                     elif response.status == ResponseStatus.NOT_FOUND:
                         logger.warning(f"Минута {minute} не найдена на сервере, пропускаем")
+                        # TODO: Надор промаркировать 
                         break  # не повторяем, данных нет
                     else:
                         logger.error(f"Неизвестный статус {response.status} для минуты {minute}, пропускаем")
@@ -63,6 +65,7 @@ async def download_candles(trackable_tickers: List[str], minutes: int, end_time:
                 except Exception as e:
                     logger.error(f"Ошибка при запросе минуты {minute}: {e}")
                     break  # другие ошибки не повторяем
+                
             logger.debug(f"Минута {minute} принесла {len(result[minute])} тикеров")
 
 

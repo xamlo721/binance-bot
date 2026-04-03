@@ -85,7 +85,7 @@ class UDPClient:
         loop = asyncio.get_running_loop()
         self.transport, self.protocol = await loop.create_datagram_endpoint(
             lambda: UDPClientProtocol(self.serializer),
-            local_addr=('0.0.0.0', 0)  # любой свободный порт
+            local_addr=(ALERT_SERVER_IP, 0)  # любой свободный порт
         )
 
     async def request(

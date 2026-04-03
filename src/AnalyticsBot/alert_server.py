@@ -7,6 +7,7 @@ from AnalyticsBot.bot_types import AlertRegister
 from AnalyticsBot.bot_types import AlertUnregister
 from AnalyticsBot.serializer import AlertProtocolSerializer
 from AnalyticsBot.logger import logger
+from AnalyticsBot.config import *
 
 class AlertServerProtocol(asyncio.DatagramProtocol):
     def __init__(self, server: 'AlertServer'):
@@ -47,7 +48,7 @@ class AlertServer:
         self.transport = None
         self.protocol = None
 
-    async def start(self, host: str = '127.0.0.1', port: int = 8888):
+    async def start(self, host: str = ALERT_SERVER_IP, port: int = ALERT_SERVER_PORT):
         """Запускает UDP сервер."""
         loop = asyncio.get_running_loop()
         self.transport, self.protocol = await loop.create_datagram_endpoint(

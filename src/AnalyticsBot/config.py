@@ -21,3 +21,15 @@ HOURS_PRICES_PROTECTIVE_INTERVAL = 1
 VOLUME_MULTIPLIER = 5.0
 
 VOLUME_LIMIT_MULTIPLIER = 6.0
+
+# Адрес сервера скачивания тикеров
+DOWNLOAD_SERVER_IP: str = "192.168.0.201"
+# Порт сервера скачивания тикеров
+DOWNLOAD_SERVER_PORTL: int =  58001
+
+# Адресс поднимаемого сервера сигналов
+ALERT_SERVER_IP: str = "192.168.0.202"
+# Порт поднимаемого сервера сигналов
+ALERT_SERVER_PORT: int = 58002
+
+

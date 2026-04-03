@@ -1,3 +1,4 @@
 .env
 __*
 binance_env
+.binance_env

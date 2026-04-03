@@ -150,128 +150,116 @@ def create_session():
     timeout = aiohttp.ClientTimeout(total=30, connect=15)
     return aiohttp.ClientSession(connector=connector, timeout=timeout)
 
-async def main_loop():
+async def main_loop(limiter: BinanceRateLimiter, session: aiohttp.ClientSession, server: UDPMarketDataServer):
     """
     Main loop: update last candles and fetch new minute candles every minute.
     """
-        
-    async with create_session() as session:
-        
-        limiter = BinanceRateLimiter(BINANCE_API_REQUEST_LIMIT, BINANCE_API_WEIGHT_LIMIT)
 
-        logger.info(f"Обновляем список тикеров")
-        symbols = get_trading_symbols()
-        if not symbols:
-            logger.error("Не удалось получить список тикеров")
-            return
-        logger.info(f"✅ Получено {len(symbols)} тикеров seconds")
-        
-        # Берём только первые 10 тикеров (для дебага)
-        symbols = symbols# [:50]
-        
-        # Скачиваем архивные свечи перед запуском        
-        total_requests = len(symbols) * ((MAX_CACHED_CANDLES + MAX_CANDLES_PER_REQUEST - 1) // MAX_CANDLES_PER_REQUEST)
-        # Оценка по весу (средний вес 10)
-        estimated_min_by_weight = (10 * total_requests) / BINANCE_API_WEIGHT_LIMIT
-        # Оценка по количеству запросов
-        estimated_min_by_count = total_requests / BINANCE_API_REQUEST_LIMIT
-        # Берём максимум как пессимистичную оценку
-        estimated_minutes = max(estimated_min_by_weight, estimated_min_by_count)
+    symbols: list[str] = []
 
-        logger.info(f"Скачиваем {MAX_CACHED_CANDLES} минутных отметок по каждому тикеру. .")
-        logger.info(f"Всего {MAX_CACHED_CANDLES * len(symbols)} свечей. Понадобится {total_requests} запросов.")
-        logger.info(f"Ориентировочно это займет {estimated_minutes * 60} секунд при соблюдении лимитов Binance.")
-        await fetch_candles(
-            session = session, 
-            symbols = symbols, 
-            limiter = limiter, 
-            count = MAX_CACHED_CANDLES
-        )
-
-        logger.info(f"✅ Updated {len(global_data)} tickers!")
-        # Создаём UDP сервер, передавая ему ссылку на глобальные данные
-        server = UDPMarketDataServer(host='127.0.0.1', port=58001)
-        await server.start()                     # ← запуск сервера (неблокирующий)
-        logger.info("UDP сервер запущен")
+    while True:
+        tick_start_time = time.time()
+        now_ms = int(time.time() * 1000)
+        server.set_busy(True)
+        missing = check_space(now_ms)
 
         try:
 
-            while True:
-                tick_start_time = time.time()
-                now_ms = int(time.time() * 1000)
-                server.set_busy(True)          # <- сервер занят
+            if missing > 0:
+                logger.info(f"Доступно минут для скачивания: {missing}. Догоняем...")
 
+                # ==================================================================== # 
+                logger.info(f"Обновляем список тикеров")
+                symbols = get_trading_symbols()
+                if not symbols:
+                    logger.error("Не удалось получить список тикеров")
+                    continue
+                logger.info(f"✅ Получено {len(symbols)} тикеров")
+                # ==================================================================== # 
 
-                missing = check_space(now_ms)
+                await fetch_candles(
+                    session = session, 
+                    symbols = symbols, 
+                    limiter = limiter,  
+                    count = missing
+                )
 
-                if missing > 1:
-                    logger.info(f"Обнаружено пропущенных минут: {missing}. Догоняем...")
+                cleanup_storage(MAX_CACHED_CANDLES)
+                server.update_data(global_data)
+        
+        except Exception as e:
+            logger.error(f"Ошибка обработки цикла: {e}")
+            
 
-                    # ==================================================================== # 
-                    logger.info(f"Обновляем список тикеров")
-                    symbols = get_trading_symbols()
-                    if not symbols:
-                        logger.error("Не удалось получить список тикеров")
-                        continue
-                    logger.info(f"✅ Получено {len(symbols)} тикеров")
-                    # ==================================================================== # 
+        # Вычисляем сколько осталось ждать
+        elapsed = time.time() - tick_start_time
+        wait_time = max(0, 5 - elapsed)  # минимум 0 секунд
 
-                    await fetch_candles(
-                        session = session, 
-                        symbols = symbols, 
-                        limiter = limiter,  
-                        count = missing
-                    )
+        server.set_busy(False)         # <- освобождаем
 
-                    cleanup_storage(MAX_CACHED_CANDLES)
-                    server.update_data(global_data)
+        if missing != 0:
+            logger.info(f"✅ Updated {len(global_data)} / {len(symbols)} tickers for {elapsed:.2f} seconds")
 
-                elif (missing == 1):
+        await asyncio.sleep(wait_time)
 
-                    # ==================================================================== # 
-                    logger.info(f"Обновляем список тикеров")
-                    symbols = get_trading_symbols()
-                    if not symbols:
-                        logger.error("Не удалось получить список тикеров")
-                        continue
-                    logger.info(f"✅ Получено {len(symbols)} тикеров")
-                    # ==================================================================== # 
-
-
-                    logger.info("Обновляем свечи за текущую минуту.")
-                    await fetch_candles(
-                        session = session, 
-                        symbols = symbols, 
-                        limiter = limiter,  
-                        count = 1
-                    )
-                    cleanup_storage(MAX_CACHED_CANDLES)
-                    server.update_data(global_data)
-
-                # Вычисляем сколько осталось ждать
-                elapsed = time.time() - tick_start_time
-                wait_time = max(0, 3 - elapsed)  # минимум 0 секунд
-
-                server.set_busy(False)         # <- освобождаем
-                if missing != 0:
-                    logger.info(f"✅ Updated {len(global_data)} / {len(symbols)} tickers for {elapsed:.2f} seconds")
-
-                await asyncio.sleep(wait_time)
-        finally:
-            server.stop()                         # ← корректная остановка сервера
-            logger.info("UDP сервер остановлен")
 
 async def main():
     """
     Main entry point.
     """
 
+    server = UDPMarketDataServer(host='127.0.0.1', port=58001)
+    limiter = BinanceRateLimiter(BINANCE_API_REQUEST_LIMIT, BINANCE_API_WEIGHT_LIMIT)
+
     try:
-        
-        await main_loop()
+
+        async with create_session() as session:
+
+            logger.info(f"Обновляем список тикеров")
+            symbols = get_trading_symbols()
+            if not symbols:
+                logger.error("Не удалось получить список тикеров")
+                return
+            logger.info(f"✅ Получено {len(symbols)} тикеров seconds")
+            
+            # Берём только первые 10 тикеров (для дебага)
+            symbols = symbols# [:50]
+            
+            # Скачиваем архивные свечи перед запуском        
+            total_requests = len(symbols) * ((MAX_CACHED_CANDLES + MAX_CANDLES_PER_REQUEST - 1) // MAX_CANDLES_PER_REQUEST)
+            # Оценка по весу (средний вес 10)
+            estimated_min_by_weight = (10 * total_requests) / BINANCE_API_WEIGHT_LIMIT
+            # Оценка по количеству запросов
+            estimated_min_by_count = total_requests / BINANCE_API_REQUEST_LIMIT
+            # Берём максимум как пессимистичную оценку
+            estimated_minutes = max(estimated_min_by_weight, estimated_min_by_count)
+
+            logger.info(f"Скачиваем {MAX_CACHED_CANDLES} минутных отметок по каждому тикеру. .")
+            logger.info(f"Всего {MAX_CACHED_CANDLES * len(symbols)} свечей. Понадобится {total_requests} запросов.")
+            logger.info(f"Ориентировочно это займет {estimated_minutes * 60} секунд при соблюдении лимитов Binance.")
+            await fetch_candles(
+                session = session, 
+                symbols = symbols, 
+                limiter = limiter, 
+                count = MAX_CACHED_CANDLES
+            )
+
+            logger.info(f"✅ Updated {len(global_data)} tickers!")
+            # Создаём UDP сервер, передавая ему ссылку на глобальные данные
+            await server.start()                     # ← запуск сервера (неблокирующий)
+            logger.info("UDP сервер запущен")
+
+            await main_loop(limiter, session, server)
 
     except KeyboardInterrupt:
+
         logger.info("Получен сигнал прерывания...")
+        server.stop()
+        logger.info("UDP сервер остановлен")
         logger.info("Остановлено пользователем")
+
+    finally:
+        server.stop()
+        logger.info("UDP сервер остановлен")
 
 asyncio.run(main())

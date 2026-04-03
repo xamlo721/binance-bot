@@ -209,7 +209,7 @@ async def main():
     Main entry point.
     """
 
-    server = UDPMarketDataServer(host='127.0.0.1', port=58001)
+    server = UDPMarketDataServer(host=DOWNLOADER_UDP_IP, port=DOWNLOADER_UDP_PORT)
     limiter = BinanceRateLimiter(BINANCE_API_REQUEST_LIMIT, BINANCE_API_WEIGHT_LIMIT)
 
     try:

@@ -29,7 +29,7 @@ from bot_types import KlineRecord
 
 from logger import *
 from config import *
-from udp_server import *
+from udp_server import UDPMarketDataServer
 
 # Список всех отметок за MINUTE_CANDLES_LIMIT минут 
 #                   <НОМЕР_МИНУТЫ List<МИНУТНАЯ_ЗАПИСЬ>>
@@ -178,6 +178,8 @@ async def main_loop(limiter: BinanceRateLimiter, session: aiohttp.ClientSession,
                 logger.info(f"✅ Получено {len(symbols)} тикеров")
                 # ==================================================================== # 
 
+                server.update_symbols(symbols)
+
                 await fetch_candles(
                     session = session, 
                     symbols = symbols, 
@@ -222,6 +224,7 @@ async def main():
                 logger.error("Не удалось получить список тикеров")
                 return
             logger.info(f"✅ Получено {len(symbols)} тикеров seconds")
+            server.update_symbols(symbols)
             
             # Берём только первые 10 тикеров (для дебага)
             symbols = symbols# [:50]
@@ -246,8 +249,7 @@ async def main():
             )
 
             logger.info(f"✅ Updated {len(global_data)} tickers!")
-            # Создаём UDP сервер, передавая ему ссылку на глобальные данные
-            await server.start()                     # ← запуск сервера (неблокирующий)
+            await server.start()
             logger.info("UDP сервер запущен")
 
             await main_loop(limiter, session, server)

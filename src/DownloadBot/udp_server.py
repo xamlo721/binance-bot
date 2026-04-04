@@ -1,10 +1,10 @@
 import asyncio
 from collections import OrderedDict
-from typing import Dict
 
 from config import *
 from logger import *
-from serializer import *
+from DownloadBot.protocol_download_serializer import *
+from DownloadBot.protocol_download import *
 
 class UDPMarketDataServer:
     
@@ -12,12 +12,12 @@ class UDPMarketDataServer:
         self.host = host
         self.port = port
         self.global_data: OrderedDict[int, list[KlineRecord]] = OrderedDict()
-        self.serializer = MessageSerializer()
+        self.symbols: List[str] = []                    # ← храним список символов
+        self.serializer = ProtocolSerializer()
         self.transport = None
         self.is_busy = False   # флаг занятости
         
     async def start(self):
-        """Запуск UDP сервера"""
         loop = asyncio.get_running_loop()
         
         # Создаем UDP endpoint
@@ -30,13 +30,15 @@ class UDPMarketDataServer:
         logger.info(f"UDP сервер запущен на {self.host}:{self.port}")
         
     def stop(self):
-        """Остановка сервера"""
         if self.transport:
             self.transport.close()
             
     def update_data(self, new_data: OrderedDict[int, list[KlineRecord]]):
         """Обновление данных (вызывается при поступлении новых данных)"""
         self.global_data = new_data
+
+    def update_symbols(self, new_symbols: List[str]):
+        self.symbols = new_symbols
         
     def set_busy(self, busy: bool):
         """Установка флага занятости сервера"""
@@ -46,61 +48,87 @@ class UDPServerProtocol(asyncio.DatagramProtocol):
     def __init__(self, server: UDPMarketDataServer):
         self.server = server
         self.transport = None
+        self.packet_counter = 0
         
     def connection_made(self, transport):
         self.transport = transport
+
+    def _send_response(self, data: bytes, addr):
+        if self.transport:
+            self.transport.sendto(data, addr)
         
     def datagram_received(self, data: bytes, addr):
-        """Обработка входящего датаграмма"""
         try:
-            if self.transport is None:
-                logger.error(f"Ошибка: транспорт не инициализирован для запроса от {addr}")
+            # Разбираем заголовок
+            parsed = self.server.serializer.deserialize_packet(data)
+            if not parsed:
+                logger.error(f"Неверный формат пакета от {addr}")
                 return
+            ptype, packet_number, payload = parsed
 
-            request = self.server.serializer.deserialize_request(data)
-            if request is None:
-                logger.error(f"Получен некорректный запрос от {addr}")
-                return
-
-            logger.info(f"Запрос от {addr}: packet={request.packet_number}, minute={request.minute_number}")
-
-            # Проверяем, занят ли сервер
-            if self.server.is_busy:
-                logger.info(f"Сервер занят, отправляем статус BUSY для {addr}")
-                response = UDPResponse(
-                    packet_number=request.packet_number,
-                    minute_number=request.minute_number,
-                    status=ResponseStatus.BUSY,   # код "сервер занят"
-                    records=[]
-                )
-                response_data = self.server.serializer.serialize_response(response)
-                self.transport.sendto(response_data, addr)
-                return
-
-            # Проверяем наличие данных за запрошенную минуту
-            if request.minute_number not in self.server.global_data:
-                logger.warning(f"Запрошенная минута {request.minute_number} отсутствует в хранилище")
-                response = UDPResponse(
-                    packet_number=request.packet_number,
-                    minute_number=request.minute_number,
-                    status=ResponseStatus.NOT_FOUND,   # код "минута не найдена"
-                    records=[]
-                )
-                response_data = self.server.serializer.serialize_response(response)
-                self.transport.sendto(response_data, addr)
-                return
-
-            # Успешный случай
-            records = self.server.global_data.get(request.minute_number, [])
-            response = UDPResponse(
-                packet_number=request.packet_number,
-                minute_number=request.minute_number,
-                status=ResponseStatus.OK,   # успех
-                records=records
-            )
-            response_data = self.server.serializer.serialize_response(response)
-            self.transport.sendto(response_data, addr)
-            logger.debug(f"Отправлен ответ для {addr}: packet={response.packet_number}, minute={response.minute_number}, tickers={len(records)}.")
+            # Обработка в зависимости от типа
+            if ptype == PacketType.KLINES_REQUEST:
+                self._handle_kline_request(packet_number, payload, addr)
+            elif ptype == PacketType.SYMBOLS_REQUEST:
+                self._handle_symbols_request(packet_number, payload, addr)
+            else:
+                logger.warning(f"Неизвестный тип пакета {ptype} от {addr}")
 
         except Exception as e:
             logger.error(f"Ошибка обработки запроса от {addr}: {e}")
+
+    def _handle_kline_request(self, packet_number: int, payload: bytes, addr):
+        # Десериализуем запрос на свечи
+        req = self.server.serializer.deserialize_kline_request(payload)
+        if req is None:
+            logger.error(f"Некорректный KLINES_REQUEST от {addr}")
+            return
+
+        logger.info(f"Kline запрос от {addr}: packet={packet_number}, minute={req.minute_number}")
+
+        # Проверка занятости
+        if self.server.is_busy:
+            resp = KlineResponse(
+                minute_number=req.minute_number,
+                status=KlineResponseStatus.BUSY,
+                records=[]
+            )
+            response_data = self.server.serializer.serialize_kline_response(resp, packet_number)
+            self._send_response(response_data, addr)
+            return
+
+        # Поиск минуты
+        records = self.server.global_data.get(req.minute_number, [])
+        if not records:
+            status = KlineResponseStatus.NOT_FOUND
+        else:
+            status = KlineResponseStatus.OK
+
+        resp = KlineResponse(
+            minute_number=req.minute_number,
+            status=status,
+            records=records
+        )
+        response_data = self.server.serializer.serialize_kline_response(resp, packet_number)
+        self._send_response(response_data, addr)
+        logger.debug(f"Отправлен Kline ответ для {addr}: minute={req.minute_number}, records={len(records)}")
+
+    def _handle_symbols_request(self, packet_number: int, payload: bytes, addr):
+        # Десериализуем запрос (пустой)
+        req = self.server.serializer.deserialize_symbols_request(payload)
+        if req is None:
+            logger.error(f"Некорректный SYMBOLS_REQUEST от {addr}")
+            return
+
+        # TODO: Учитывать запрошеное время
+        
+        logger.info(f"Symbols запрос от {addr}: packet={packet_number}")
+
+        # Формируем ответ
+        resp = SymbolsResponse(
+            status=0 if not self.server.is_busy else 1,   # 1 - сервер занят (можно расширить)
+            symbols=self.server.symbols if not self.server.is_busy else []
+        )
+        response_data = self.server.serializer.serialize_symbols_response(resp, packet_number)
+        self._send_response(response_data, addr)
+        logger.debug(f"Отправлен Symbols ответ для {addr}: {len(resp.symbols)} символов")

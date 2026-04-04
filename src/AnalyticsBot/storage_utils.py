@@ -112,7 +112,7 @@ def save_klines_to_ram(results: OrderedDict[int, list[KlineRecord]]):
         keys_sorted = sorted(candle_1m_records.keys())
         for i in range(len(keys_sorted) - 1):
             if keys_sorted[i+1] != keys_sorted[i] +1:
-                logger.warning(f"Разрыв между минутами {keys_sorted[i]} и {keys_sorted[i+1]}: Δ={keys_sorted[i+1] - keys_sorted[i]}с")
+                logger.warning(f"Разрыв между минутами {keys_sorted[i]} и {keys_sorted[i+1]}: Δ={keys_sorted[i+1] - keys_sorted[i]}мин")
 
     # Логируем общее состояние
     non_empty_periods = len(candle_1m_records)

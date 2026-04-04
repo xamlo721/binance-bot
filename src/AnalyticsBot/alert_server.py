@@ -2,10 +2,11 @@
 import asyncio
 from typing import Set, Tuple
 
-from AnalyticsBot.bot_types import AlertData, AlertRecord
-from AnalyticsBot.bot_types import AlertRegister
-from AnalyticsBot.bot_types import AlertUnregister
-from AnalyticsBot.serializer import AlertProtocolSerializer
+from AnalyticsBot.bot_types import AlertRecord
+from AnalyticsBot.protocol_alert import AlertData
+from AnalyticsBot.protocol_alert import AlertRegister
+from AnalyticsBot.protocol_alert import AlertUnregister
+from AnalyticsBot.protocol_alert_serializer import AlertProtocolSerializer
 from AnalyticsBot.logger import logger
 from AnalyticsBot.config import *
 

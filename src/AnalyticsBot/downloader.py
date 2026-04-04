@@ -1,15 +1,13 @@
 import asyncio
-from typing import List, Dict
+from typing import List
 from collections import OrderedDict
 from datetime import datetime
 
-# Предполагаем, что классы UDPClient, UDPRequest, UDPResponse, MessageSerializer 
-# уже определены (например, в модуле udp_client.py)
-from udp_client import UDPClient, UDPRequest, UDPResponse
-
-from AnalyticsBot.bot_types import *
+from AnalyticsBot.udp_client import UDPClient
+from AnalyticsBot.bot_types import KlineRecord
 from AnalyticsBot.logger import logger
 from AnalyticsBot.config import *
+from AnalyticsBot.protocol_download import KlineResponseStatus
 
 async def download_candles(trackable_tickers: List[str], minutes: int, end_time: datetime, server_addr: tuple = (DOWNLOAD_SERVER_IP, DOWNLOAD_SERVER_PORTL), timeout: float = 10.0 ) -> OrderedDict[int, list[KlineRecord]]:
     """
@@ -26,36 +24,34 @@ async def download_candles(trackable_tickers: List[str], minutes: int, end_time:
     async with UDPClient() as client:
         # Для каждой минуты из диапазона
         for minute in range(start_minute, end_minute):
+            success = False
             # Можно добавить повторные попытки при таймауте/ошибке
             for attempt in range(3):  # до 3 попыток
                 try:
-                    response = await client.request(
-                        packet_number=minute,  # используем номер минуты как packet_number для простоты
+                    response = await client.request_klines(
                         minute_number=minute,
                         server_addr=server_addr,
                         timeout=timeout
                     )
                     # Обрабатываем статус ответа
-                    if response.status == ResponseStatus.OK:
+                    if response.status == KlineResponseStatus.OK:
                         # Фильтруем записи только по интересующим тикерам
                         filtered = [rec for rec in response.records if rec.symbol in trackable_tickers]
                         result[minute] = filtered
+                        success = True
                         break  # успешно
-                    elif response.status == ResponseStatus.BUSY:
+                    elif response.status == KlineResponseStatus.BUSY:
                         logger.warning(f"Сервер занят, попытка {attempt+1} для минуты {minute}")
                         await asyncio.sleep(10)  # ждём 10 секунду перед повтором
                         attempt = attempt - 1
                         continue
-                    elif response.status == ResponseStatus.NOT_FOUND:
+                    elif response.status == KlineResponseStatus.NOT_FOUND:
                         logger.warning(f"Минута {minute} не найдена на сервере, пропускаем")
                         # TODO: Надор промаркировать 
                         break  # не повторяем, данных нет
                     else:
                         logger.error(f"Неизвестный статус {response.status} для минуты {minute}, пропускаем")
                         break
-
-
-                    break  # успешно, выходим из цикла попыток
 
                 except asyncio.TimeoutError:
                     logger.warning(f"Таймаут при запросе минуты {minute}, попытка {attempt+1}")
@@ -66,8 +62,10 @@ async def download_candles(trackable_tickers: List[str], minutes: int, end_time:
                     logger.error(f"Ошибка при запросе минуты {minute}: {e}")
                     break  # другие ошибки не повторяем
                 
-            logger.debug(f"Минута {minute} принесла {len(result[minute])} тикеров")
-
+            if success:
+                logger.debug(f"Минута {minute} принесла {len(result[minute])} тикеров")
+            else:
+                logger.debug(f"Минута {minute} не загружена")
 
     logger.debug(f"Всего скачано {len(result)} минут для {len(trackable_tickers)} тикеров")
 

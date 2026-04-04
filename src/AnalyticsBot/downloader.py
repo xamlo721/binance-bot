@@ -1,5 +1,6 @@
 import asyncio
 from typing import List
+from typing import Optional
 from collections import OrderedDict
 from datetime import datetime
 
@@ -8,8 +9,32 @@ from AnalyticsBot.bot_types import KlineRecord
 from AnalyticsBot.logger import logger
 from AnalyticsBot.config import *
 from AnalyticsBot.protocol_download import KlineResponseStatus
+from AnalyticsBot.protocol_download import SymbolsResponse
 
-async def download_candles(trackable_tickers: List[str], minutes: int, end_time: datetime, server_addr: tuple = (DOWNLOAD_SERVER_IP, DOWNLOAD_SERVER_PORTL), timeout: float = 10.0 ) -> OrderedDict[int, list[KlineRecord]]:
+async def _request_symbols_async(server_addr: tuple, timeout: float = 10.0) -> Optional[SymbolsResponse]:
+    """Асинхронно запрашивает список символов с сервера."""
+    async with UDPClient() as client:
+        # Номер минуты (можно передать 0, сервер должен вернуть актуальный список)
+        request_time = int(datetime.now().timestamp() // 60)
+        response = await client.request_symbols(request_time, server_addr, timeout)
+        return response
+
+def get_trading_symbols_from_server() -> List[str]:
+    """Синхронная обёртка для получения списка символов с UDP-сервера."""
+    server_addr = (DOWNLOAD_SERVER_IP, DOWNLOAD_SERVER_PORT)
+    try:
+        response = asyncio.run(_request_symbols_async(server_addr))
+        if response and response.status == 0:
+            logger.info(f"Получено {len(response.symbols)} символов с сервера")
+            return response.symbols
+        else:
+            logger.error(f"Ошибка получения символов: статус {response.status if response else 'None'}")
+            return []
+    except Exception as e:
+        logger.error(f"Исключение при получении символов: {e}")
+        return []
+    
+async def download_candles(trackable_tickers: List[str], minutes: int, end_time: datetime, server_addr: tuple = (DOWNLOAD_SERVER_IP, DOWNLOAD_SERVER_PORT), timeout: float = 10.0 ) -> OrderedDict[int, list[KlineRecord]]:
     """
     Асинхронная внутренняя функция, выполняющая запросы к UDP-серверу.
     Возвращает список списков KlineRecord, сгруппированных по тикерам.

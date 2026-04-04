@@ -1,6 +1,5 @@
 import time
 import asyncio
-import requests
 from pathlib import Path
 
 import sys
@@ -46,6 +45,7 @@ from AnalyticsBot.analytic_utils import check_price_overlimit
 from AnalyticsBot.analytic_utils import check_volume_overlimit
 
 from AnalyticsBot.downloader import download_candles
+from AnalyticsBot.downloader import get_trading_symbols_from_server
 
 from AnalyticsBot.alert_server import *
 from AnalyticsBot.alert_server_thread import *
@@ -82,28 +82,9 @@ def download_candles_reccursively(trackable_tickers: list[str], minutes: int) ->
     
     return klines_1m_full
 
-def get_trading_symbols():
-    """Получение списка торгующихся тикеров"""
-    url = "https://fapi.binance.com/fapi/v1/exchangeInfo"
-    try:
-        response = requests.get(url)
-        data = response.json()
-        
-        symbols = []
-        for symbol_info in data['symbols']:
-            if (symbol_info['status'] == 'TRADING' and symbol_info.get('contractType') == 'PERPETUAL'):
-                # Исключаем тикеры с "USDC"
-                symbol_name = symbol_info['symbol']
-                if not symbol_name.startswith("USDC") and not symbol_name.endswith("USDC"):
-                    symbols.append(symbol_name)
-        
-        return symbols
-    except Exception as e:
-        logger.error(f"Ошибка при получении списка тикеров: {str(e)}")
-        return []
     
 def getTrackedTickers() -> list[str]:
-    symbols = get_trading_symbols()
+    symbols = get_trading_symbols_from_server()
     if not symbols:
         return []
     
@@ -131,8 +112,7 @@ def doTick():
     """
 
     # ====================== Step 1 ========================= #
-    # Подключаемся к binance и скачиваем оттуда список торговых пар.
-    # TODO: Нужно этот список получать с downloader-а, а не напрямую, для уменьшения количества запросов
+    # Подключаемся к downloader-у и скачиваем оттуда список доступных торговых пар.
     #
     # ======================================================= # 
     logger.debug("Обновляем список тикеров...")

@@ -67,8 +67,8 @@ class ProtocolSerializer:
     @staticmethod
     def serialize_symbols_response(resp: SymbolsResponse, packet_number: int) -> bytes:
         """Формирует пакет SYMBOLS_RESPONSE."""
-        # Сериализуем список строк: кол-во (I) + для каждой строки: длина (H) + UTF-8 байты
-        data = struct.pack('!I', len(resp.symbols))
+        # Формат: status (I), количество строк (I), затем для каждой строки: длина (H) + UTF-8        
+        data = struct.pack('!II', resp.status, len(resp.symbols))
         for sym in resp.symbols:
             sym_bytes = sym.encode('utf-8')
             data += struct.pack('!H', len(sym_bytes)) + sym_bytes
@@ -122,11 +122,11 @@ class ProtocolSerializer:
 
     @staticmethod
     def deserialize_symbols_response(payload: bytes) -> Optional[SymbolsResponse]:
-        if len(payload) < 4:
+        if len(payload) < 8:   # минимум status + count
             return None
-        num_symbols = struct.unpack('!I', payload[:4])[0]
+        status, num_symbols = struct.unpack('!II', payload[:8])
         symbols = []
-        pos = 4
+        pos = 8
         for _ in range(num_symbols):
             if pos + 2 > len(payload):
                 return None
@@ -137,4 +137,4 @@ class ProtocolSerializer:
             sym = payload[pos:pos+sym_len].decode('utf-8')
             symbols.append(sym)
             pos += sym_len
-        return SymbolsResponse(status=0, symbols=symbols)   # status всегда 0 при успехе
+        return SymbolsResponse(status=status, symbols=symbols)

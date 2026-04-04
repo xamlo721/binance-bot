@@ -12,7 +12,7 @@ class PacketType(IntEnum):
 
     # Запрос/ответ для получения списка доступных символов
     SYMBOLS_REQUEST = 2
-    SYMBOLS_RESPONSE = 128 + KLINES_REQUEST
+    SYMBOLS_RESPONSE = 128 + SYMBOLS_REQUEST
 
 
 @dataclass

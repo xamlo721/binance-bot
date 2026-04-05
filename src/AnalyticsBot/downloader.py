@@ -1,4 +1,6 @@
 import asyncio
+import time
+
 from typing import List
 from typing import Optional
 from collections import OrderedDict
@@ -47,20 +49,32 @@ async def _request_symbols_async(server_addr: tuple, timeout: float = 10.0) -> O
         response = await client.request_symbols(request_time, server_addr, timeout)
         return response
 
-def get_trading_symbols_from_server() -> List[str]:
-    """Синхронная обёртка для получения списка символов с UDP-сервера."""
+def get_trading_symbols_from_server(retry_delay: float = 10.0) -> List[str]:
+    """
+    Синхронная обёртка для получения списка символов с UDP-сервера.
+    При статусе BUSY (2) или временных ошибках (таймаут, исключение) выполняет бесконечные повторные запросы
+    с задержкой retry_delay секунд. При других статусах (например, NOT_FOUND) возвращает пустой список.
+    """
     server_addr = (DOWNLOAD_SERVER_IP, DOWNLOAD_SERVER_PORT)
-    try:
-        response = asyncio.run(_request_symbols_async(server_addr))
-        if response and response.status == 0:
-            logger.info(f"Получено {len(response.symbols)} символов с сервера")
-            return response.symbols
-        else:
-            logger.error(f"Ошибка получения символов: статус {response.status if response else 'None'}")
-            return []
-    except Exception as e:
-        logger.error(f"Исключение при получении символов: {e}")
-        return []
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            response = asyncio.run(_request_symbols_async(server_addr))
+            if response and response.status == ServerResponseStatus.OK:
+                logger.info(f"Получено {len(response.symbols)} символов с сервера (попытка {attempt})")
+                return response.symbols
+            elif response and response.status == ServerResponseStatus.BUSY:
+                logger.warning(f"Сервер занят (BUSY), повтор через {retry_delay} сек... (попытка {attempt})")
+                time.sleep(retry_delay)
+                continue
+            else:
+                logger.error(f"Ошибка получения символов: статус {response.status if response else 'None'}")
+                return []
+        except Exception as e:
+            logger.error(f"Исключение при получении символов: {e}, повтор через {retry_delay} сек... (попытка {attempt})")
+            time.sleep(retry_delay)
+            continue
     
 # ========================================================================================================== #
 async def download_candles(trackable_tickers: List[str], minutes: int, end_time: datetime, server_addr: tuple = (DOWNLOAD_SERVER_IP, DOWNLOAD_SERVER_PORT), timeout: float = 10.0 ) -> OrderedDict[int, list[KlineRecord]]:

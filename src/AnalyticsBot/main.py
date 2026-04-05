@@ -140,7 +140,7 @@ def doTick(servertime_ms: int):
         last_minute_number = max(recent_klines.keys())
         # -1 стоит, потому что в свеча с номером текущей минутой закрывается по мнению бинанса в 00 следующей минуты
         # и чтобы не ломать психику логике ботов, проще тут это учесть
-        current_minute_number = int(servertime_ms / 60) - 1
+        current_minute_number = (servertime_ms // 60000) - 1
         logger.debug(f"Последняя сохранённая минута: {last_minute_number}. Текущая минута {current_minute_number}")
         logger.debug(f"Всего в хранилище содержится {len(get_1m_candles())} записей")
 

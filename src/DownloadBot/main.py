@@ -21,6 +21,7 @@ download_bot_src_path = Path(__file__).resolve().parent
 sys.path.append(str(src_path))
 sys.path.append(str(download_bot_src_path))
 
+from binance_utils import get_binance_server_time
 from binance_utils import get_trading_symbols
 from binance_utils import fetch_klines_for_symbols
 from DownloadBot.binance_limiter import BinanceRateLimiter
@@ -35,9 +36,29 @@ from udp_server import UDPMarketDataServer
 #                   <НОМЕР_МИНУТЫ List<МИНУТНАЯ_ЗАПИСЬ>>
 global_data: OrderedDict[int, list[KlineRecord]] = OrderedDict()
 
+# Глобальное смещение (серверное время - локальное время), миллисекунды
+time_offset_ms: int = 0
+
 def _format_ts(ts_ms: int) -> str:
     """Преобразует timestamp в миллисекундах в строку ГГГГ-ММ-ДД ЧЧ:ММ:СС"""
     return datetime.fromtimestamp(ts_ms / 1000).strftime('%Y-%m-%d %H:%M:%S')
+
+async def update_time_offset(session: aiohttp.ClientSession) -> None:
+    """Обновляет смещение времени между локальной машиной и Binance."""
+    global time_offset_ms
+    server_time = await get_binance_server_time(session)
+    if server_time is not None:
+        local_time = int(time.time() * 1000)
+        new_offset = server_time - local_time
+        if abs(new_offset - time_offset_ms) > 500:  # логируем только значительные изменения
+            logger.info(f"Коррекция времени: смещение изменено с {time_offset_ms} мс на {new_offset} мс")
+        time_offset_ms = new_offset
+    else:
+        logger.warning("Не удалось получить время Binance, смещение не обновлено")
+
+def get_adjusted_now_ms() -> int:
+    """Возвращает текущее время в миллисекундах с учётом смещения с Binance."""
+    return int(time.time() * 1000) + time_offset_ms
 
 def is_storage_consistent(candle_dict: dict[int, list[KlineRecord]]) -> bool:
     """
@@ -81,7 +102,7 @@ async def fetch_candles(session: aiohttp.ClientSession, symbols: list[str], limi
     Получаем последние `count` минут (по умолчанию 24 часа) и сохраняем их в глобальном хранилище.
     """
     # Текущий момент
-    now_timestamp = int(time.time() * 1000)
+    now_timestamp = get_adjusted_now_ms()
     # Последняя завершенная минута
     end_timestamp = now_timestamp - (now_timestamp % 60000) - 1
 
@@ -112,7 +133,6 @@ def cleanup_storage(storage_imit: int):
     else:
         logger.error(f"❌ Хранилище неконсистентно. Период хранения с"
                      f" {_format_ts(list(global_data.keys())[0] * 60000)} по {_format_ts(list(global_data.keys())[-1] * 60000)}")
-        
 
 def check_space(now_ms: int) -> int:
     """
@@ -159,8 +179,9 @@ async def main_loop(limiter: BinanceRateLimiter, session: aiohttp.ClientSession,
     symbols: list[str] = []
 
     while True:
+        await update_time_offset(session) 
         tick_start_time = time.time()
-        now_ms = int(time.time() * 1000)
+        now_ms = get_adjusted_now_ms()
         server.set_busy(True)
         missing = check_space(now_ms)
 
@@ -217,6 +238,7 @@ async def main():
     try:
 
         async with create_session() as session:
+            await update_time_offset(session)
 
             logger.info(f"Обновляем список тикеров")
             symbols = await get_trading_symbols(session)

@@ -17,7 +17,23 @@ from DownloadBot.config import *
 from DownloadBot.binance_limiter import get_kline_weight
 from DownloadBot.binance_limiter import BinanceRateLimiter
 
-
+async def get_binance_server_time(session: aiohttp.ClientSession) -> Optional[int]:
+    """
+    Возвращает серверное время Binance в миллисекундах.
+    """
+    url = "https://fapi.binance.com/fapi/v1/time"
+    try:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                return data['serverTime']
+            else:
+                logger.error(f"Ошибка получения времени Binance: HTTP {resp.status}")
+                return None
+    except Exception as e:
+        logger.error(f"Исключение при запросе времени Binance: {e}")
+        return None
+    
 async def get_trading_symbols(session: aiohttp.ClientSession) -> list[str]:
     """Получение списка торгующихся тикеров"""
     """Асинхронное получение списка торгующихся тикеров с повторными попытками"""
@@ -26,7 +42,7 @@ async def get_trading_symbols(session: aiohttp.ClientSession) -> list[str]:
     
     for attempt in range(max_retries):
         try:
-            
+
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
                 if response.status == 200:
                     data = await response.json()

@@ -1,5 +1,5 @@
 import asyncio
-import time
+import time 
 from collections import OrderedDict
 
 from config import *
@@ -97,6 +97,16 @@ class UDPServerProtocol(asyncio.DatagramProtocol):
 
         logger.debug(f"Time запрос от {addr}: packet={packet_number}, client_ts={req.client_timestamp_ms}")
 
+        # Проверка занятости
+        if self.server.is_busy:
+            resp = TimeResponse(
+                status=ServerResponseStatus.BUSY,
+                server_time_ms=0
+            )
+            response_data = self.server.serializer.serialize_time_response(resp, packet_number)
+            self._send_response(response_data, addr)
+            return
+        
         # Формируем ответ: всегда успех (0), серверное время
         server_time = self.server.get_adjusted_now_ms()
         resp = TimeResponse(status=0, server_time_ms=server_time)
@@ -111,13 +121,13 @@ class UDPServerProtocol(asyncio.DatagramProtocol):
             logger.error(f"Некорректный KLINES_REQUEST от {addr}")
             return
 
-        logger.info(f"Kline запрос от {addr}: packet={packet_number}, minute={req.minute_number}")
+        logger.debug(f"Kline запрос от {addr}: packet={packet_number}, minute={req.minute_number}")
 
         # Проверка занятости
         if self.server.is_busy:
             resp = KlineResponse(
                 minute_number=req.minute_number,
-                status=KlineResponseStatus.BUSY,
+                status=ServerResponseStatus.BUSY,
                 records=[]
             )
             response_data = self.server.serializer.serialize_kline_response(resp, packet_number)
@@ -127,9 +137,9 @@ class UDPServerProtocol(asyncio.DatagramProtocol):
         # Поиск минуты
         records = self.server.global_data.get(req.minute_number, [])
         if not records:
-            status = KlineResponseStatus.NOT_FOUND
+            status = ServerResponseStatus.NOT_FOUND
         else:
-            status = KlineResponseStatus.OK
+            status = ServerResponseStatus.OK
 
         resp = KlineResponse(
             minute_number=req.minute_number,
@@ -151,6 +161,16 @@ class UDPServerProtocol(asyncio.DatagramProtocol):
 
         logger.info(f"Symbols запрос от {addr}: packet={packet_number}")
 
+        # Проверка занятости
+        if self.server.is_busy:
+            resp = SymbolsResponse(
+                status=ServerResponseStatus.BUSY,
+                symbols=[]
+            )
+            response_data = self.server.serializer.serialize_symbols_response(resp, packet_number)
+            self._send_response(response_data, addr)
+            return
+        
         # Формируем ответ
         resp = SymbolsResponse(
             status=0 if not self.server.is_busy else 1,   # 1 - сервер занят (можно расширить)

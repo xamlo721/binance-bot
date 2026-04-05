@@ -92,12 +92,6 @@ async def fetch_klines_paginated(session: aiohttp.ClientSession, symbol: str, co
                 if count <= 0:
                     raise ValueError("count must be positive")
                 
-
-                # Авто-расчёт end_timestamp
-                if end_timestamp is None:
-                    now_ms = int(time.time() * 1000)
-                    end_timestamp = now_ms - (now_ms % 60000) - 1    
-                    
                 all_candles: List[KlineRecord] = []
                 current_end = end_timestamp
                 max_per_request = MAX_CANDLES_PER_REQUEST  # Лимит Binance для одного запроса
@@ -198,8 +192,8 @@ async def fetch_klines_for_symbols(
     session: aiohttp.ClientSession,
     symbols: List[str],
     limiter: BinanceRateLimiter,
-    count: int = 1,
-    end_timestamp: Optional[int] = None,
+    count: int,
+    end_timestamp: int,
     max_concurrent: int = THREAD_POOL_SIZE
 ) -> OrderedDict[int, list[KlineRecord]]:
     """
@@ -221,11 +215,6 @@ async def fetch_klines_for_symbols(
     """
     if count <= 0:
         raise ValueError("count must be positive")
-
-    # Авто-расчёт end_timestamp
-    if end_timestamp is None:
-        now_ms = int(time.time() * 1000)
-        end_timestamp = now_ms - (now_ms % 60000) - 1
 
     semaphore = asyncio.Semaphore(min(max_concurrent, 50))
 

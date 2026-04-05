@@ -28,6 +28,14 @@ class Packet:
     # размер поля данных пакета (4 байта)
     packet_lenght: int
 
+class ServerResponseStatus:
+    # успех
+    OK = 0
+    # данные не найдены
+    NOT_FOUND = 1
+    # сервер занят
+    BUSY = 2
+
 # ============================== Symbols requests ==================================================== #
 
 @dataclass
@@ -49,13 +57,6 @@ class KlineRequest:
     # номер минуты (4 байта)
     minute_number: int
 
-class KlineResponseStatus:
-    # успех
-    OK = 0
-    # минута не найдена
-    NOT_FOUND = 1
-    # сервер занят
-    BUSY = 2
 
 @dataclass 
 class KlineResponse:
@@ -80,4 +81,3 @@ class TimeResponse:
     status: int
      # текущее время сервера (скорректированное) в миллисекундах
     server_time_ms: int
-    

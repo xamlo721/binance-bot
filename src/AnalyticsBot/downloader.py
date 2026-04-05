@@ -8,7 +8,7 @@ from AnalyticsBot.udp_client import UDPClient
 from AnalyticsBot.bot_types import KlineRecord
 from AnalyticsBot.logger import logger
 from AnalyticsBot.config import *
-from AnalyticsBot.protocol_download import KlineResponseStatus
+from AnalyticsBot.protocol_download import ServerResponseStatus
 from AnalyticsBot.protocol_download import SymbolsResponse
 from AnalyticsBot.protocol_download import TimeResponse
 
@@ -88,18 +88,18 @@ async def download_candles(trackable_tickers: List[str], minutes: int, end_time:
                         timeout=timeout
                     )
                     # Обрабатываем статус ответа
-                    if response.status == KlineResponseStatus.OK:
+                    if response.status == ServerResponseStatus.OK:
                         # Фильтруем записи только по интересующим тикерам
                         filtered = [rec for rec in response.records if rec.symbol in trackable_tickers]
                         result[minute] = filtered
                         success = True
                         break  # успешно
-                    elif response.status == KlineResponseStatus.BUSY:
+                    elif response.status == ServerResponseStatus.BUSY:
                         logger.warning(f"Сервер занят, попытка {attempt+1} для минуты {minute}")
                         await asyncio.sleep(10)  # ждём 10 секунду перед повтором
                         attempt = attempt - 1
                         continue
-                    elif response.status == KlineResponseStatus.NOT_FOUND:
+                    elif response.status == ServerResponseStatus.NOT_FOUND:
                         logger.warning(f"Минута {minute} не найдена на сервере, пропускаем")
                         # TODO: Надор промаркировать 
                         break  # не повторяем, данных нет

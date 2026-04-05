@@ -27,7 +27,7 @@ class UDPClientProtocol(asyncio.DatagramProtocol):
             return
         ptype, packet_number, payload = parsed
 
-        if ptype not in (PacketType.KLINES_RESPONSE, PacketType.SYMBOLS_RESPONSE):
+        if ptype not in (PacketType.KLINES_RESPONSE, PacketType.SYMBOLS_RESPONSE,  PacketType.TIME_RESPONSE):
             logger.warning(f"Получен пакет не-ответ: {ptype}")
             return
 
@@ -43,12 +43,16 @@ class UDPClientProtocol(asyncio.DatagramProtocol):
         try:
             if ptype == PacketType.KLINES_RESPONSE:
                 response = self.serializer.deserialize_kline_response(payload)
+            elif ptype == PacketType.TIME_RESPONSE:
+                response = self.serializer.deserialize_time_response(payload)
             else:
                 response = self.serializer.deserialize_symbols_response(payload)
+
             if response is None:
                 future.set_exception(ValueError("Ошибка десериализации ответа"))
             else:
                 future.set_result(response)
+
         except Exception as e:
             future.set_exception(e)
 
@@ -126,6 +130,17 @@ class UDPClient:
         response = await self.protocol.send_request(data, server_addr, pnum, timeout)
         if not isinstance(response, SymbolsResponse):
             raise TypeError(f"Ожидался SymbolsResponse, получен {type(response)}")
+        return response
+    
+    async def request_time(self, client_timestamp_ms: int, server_addr: Tuple[str, int], timeout: float = 10.0, packet_number: Optional[int] = None) -> TimeResponse:
+        if not self.protocol:
+            raise RuntimeError("Клиент не подключён.")
+        pnum = packet_number if packet_number is not None else self._next_packet_number()
+        req = TimeRequest(client_timestamp_ms=client_timestamp_ms)
+        data = self.serializer.serialize_time_request(req, pnum)
+        response = await self.protocol.send_request(data, server_addr, pnum, timeout)
+        if not isinstance(response, TimeResponse):
+            raise TypeError(f"Ожидался TimeResponse, получен {type(response)}")
         return response
 
     def close(self):

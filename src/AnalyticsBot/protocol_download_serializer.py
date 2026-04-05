@@ -76,6 +76,22 @@ class ProtocolSerializer:
                                                   packet_number, len(data))
         return header + data
 
+    @staticmethod
+    def serialize_time_request(req: TimeRequest, packet_number: int) -> bytes:
+        """Формирует пакет TIME_REQUEST."""
+        data = struct.pack('!q', req.client_timestamp_ms)  # 8 байт, signed
+        header = ProtocolSerializer._build_header(PacketType.TIME_REQUEST,
+                                                  packet_number, len(data))
+        return header + data
+
+    @staticmethod
+    def serialize_time_response(resp: TimeResponse, packet_number: int) -> bytes:
+        """Формирует пакет TIME_RESPONSE."""
+        data = struct.pack('!iq', resp.status, resp.server_time_ms)  # status: int, time: long long
+        header = ProtocolSerializer._build_header(PacketType.TIME_RESPONSE,
+                                                  packet_number, len(data))
+        return header + data
+    
     # ---------- Десериализация ----------
     @staticmethod
     def deserialize_packet(data: bytes) -> Optional[tuple[PacketType, int, bytes]]:
@@ -137,4 +153,22 @@ class ProtocolSerializer:
             sym = payload[pos:pos+sym_len].decode('utf-8')
             symbols.append(sym)
             pos += sym_len
-        return SymbolsResponse(status=status, symbols=symbols)
+        return SymbolsResponse(status=status, symbols=symbols)  
+
+    @staticmethod
+    def deserialize_time_request(payload: bytes) -> Optional[TimeRequest]:
+        if len(payload) < 8:
+            return None
+        client_ts = struct.unpack('!q', payload[:8])[0]
+        return TimeRequest(client_timestamp_ms=client_ts)
+
+    @staticmethod
+    def deserialize_time_response(payload: bytes) -> Optional[TimeResponse]:
+        if len(payload) < 12:  # 4 (status) + 8 (time)
+            return None
+        status, server_time = struct.unpack('!iq', payload[:12])
+        return TimeResponse(status=status, server_time_ms=server_time)
+    
+
+
+    

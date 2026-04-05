@@ -14,6 +14,10 @@ class PacketType(IntEnum):
     SYMBOLS_REQUEST = 2
     SYMBOLS_RESPONSE = 128 + SYMBOLS_REQUEST
 
+    # Запрос/ответ для получения текущего времени binance
+    TIME_REQUEST = 3
+    TIME_RESPONSE = 128 + TIME_REQUEST
+
 
 @dataclass
 class Packet:
@@ -62,3 +66,18 @@ class KlineResponse:
     # список записей              
     records: list[KlineRecord]
 
+# ============================== Kline requests ==================================================== #
+
+@dataclass
+class TimeRequest:
+    """Запрос времени сервера. Тело может быть пустым или содержать метку времени клиента."""
+    # время клиента на момент отправки
+    client_timestamp_ms: int = 0
+
+@dataclass
+class TimeResponse:
+    # 0 - успех, иначе ошибка
+    status: int
+     # текущее время сервера (скорректированное) в миллисекундах
+    server_time_ms: int
+    

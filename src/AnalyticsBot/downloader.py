@@ -10,6 +10,34 @@ from AnalyticsBot.logger import logger
 from AnalyticsBot.config import *
 from AnalyticsBot.protocol_download import KlineResponseStatus
 from AnalyticsBot.protocol_download import SymbolsResponse
+from AnalyticsBot.protocol_download import TimeResponse
+
+
+def get_server_time_diff() -> Optional[int]:
+    """
+    Запрашивает время сервера и возвращает разницу (серверное время - локальное время клиента) в миллисекундах.
+    Если запрос не удался, возвращает None.
+    """
+    server_addr = (DOWNLOAD_SERVER_IP, DOWNLOAD_SERVER_PORT)
+    client_timestamp_ms = int(datetime.now().timestamp() * 1000)
+    try:
+        response = asyncio.run(_request_time_async(client_timestamp_ms, server_addr))
+        if response and response.status == 0:
+            diff = response.server_time_ms - client_timestamp_ms
+            logger.debug(f"Разница времени с сервером: {diff} мс")
+            return diff
+        else:
+            logger.error(f"Ошибка получения времени: статус {response.status if response else 'None'}")
+            return None
+    except Exception as e:
+        logger.error(f"Исключение при получении времени: {e}")
+        return None
+
+async def _request_time_async(client_timestamp_ms: int, server_addr: tuple, timeout: float = 10.0) -> Optional[TimeResponse]:
+    async with UDPClient() as client:
+        return await client.request_time(client_timestamp_ms, server_addr, timeout)
+
+# ========================================================================================================== #
 
 async def _request_symbols_async(server_addr: tuple, timeout: float = 10.0) -> Optional[SymbolsResponse]:
     """Асинхронно запрашивает список символов с сервера."""
@@ -34,6 +62,7 @@ def get_trading_symbols_from_server() -> List[str]:
         logger.error(f"Исключение при получении символов: {e}")
         return []
     
+# ========================================================================================================== #
 async def download_candles(trackable_tickers: List[str], minutes: int, end_time: datetime, server_addr: tuple = (DOWNLOAD_SERVER_IP, DOWNLOAD_SERVER_PORT), timeout: float = 10.0 ) -> OrderedDict[int, list[KlineRecord]]:
     """
     Асинхронная внутренняя функция, выполняющая запросы к UDP-серверу.

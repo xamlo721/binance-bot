@@ -183,6 +183,7 @@ async def main_loop(limiter: BinanceRateLimiter, session: aiohttp.ClientSession,
         tick_start_time = time.time()
         now_ms = get_adjusted_now_ms()
         server.set_busy(True)
+        server.set_time_offset(time_offset_ms)
         missing = check_space(now_ms)
 
         try:
@@ -239,6 +240,7 @@ async def main():
 
         async with create_session() as session:
             await update_time_offset(session)
+            server.set_time_offset(time_offset_ms)
 
             logger.info(f"Обновляем список тикеров")
             symbols = await get_trading_symbols(session)

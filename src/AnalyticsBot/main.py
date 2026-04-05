@@ -45,6 +45,7 @@ from AnalyticsBot.analytic_utils import check_price_overlimit
 from AnalyticsBot.analytic_utils import check_volume_overlimit
 
 from AnalyticsBot.downloader import download_candles
+from AnalyticsBot.downloader import get_server_time_diff
 from AnalyticsBot.downloader import get_trading_symbols_from_server
 
 from AnalyticsBot.alert_server import *
@@ -52,10 +53,11 @@ from AnalyticsBot.alert_server_thread import *
 
 alert_thread = AlertServerThread()
 
-def download_candles_reccursively(trackable_tickers: list[str], minutes: int) -> OrderedDict[int, list[KlineRecord]]:
+def download_candles_reccursively(servertime_ms: int, trackable_tickers: list[str], minutes: int) -> OrderedDict[int, list[KlineRecord]]:
     logger.info(f"✅ Запущено предварительное скачивание архивных данных {minutes} минутных свеч...")
     download_start_time = time.time()
-    klines_1m_full: OrderedDict[int, list[KlineRecord]] = asyncio.run(download_candles(trackable_tickers, minutes, datetime.now()))
+    end_time = datetime.fromtimestamp(servertime_ms / 1000.0)
+    klines_1m_full: OrderedDict[int, list[KlineRecord]] = asyncio.run(download_candles(trackable_tickers, minutes, end_time))
     download_stop_time = time.time()
     logger.info(f"✅ Скачивание завершено.")
 
@@ -67,10 +69,14 @@ def download_candles_reccursively(trackable_tickers: list[str], minutes: int) ->
         logger.warning(f"⚠️ За это время уже сформировалось {int(duration_minutes) } минутных свечей.")
         logger.warning( "⚠️ Необходимо запустить скачивание оставшихся свечей.")
 
+        # Обновляем серверное время, добавляя прошедшее время
+        new_servertime_ms = servertime_ms + int((download_stop_time - download_start_time) * 1000)
+        end_time = datetime.fromtimestamp(new_servertime_ms / 1000.0)
+
         # Запускаем второй этап скачивания
         logger.info(f"✅ Запущено предварительное скачивание архивных данных {int(duration_minutes)} минутных свеч...")
         download_start_time = time.time()
-        sub_klines: OrderedDict[int, list[KlineRecord]] = asyncio.run(download_candles(trackable_tickers, int(duration_minutes), datetime.now()))
+        sub_klines: OrderedDict[int, list[KlineRecord]] = asyncio.run(download_candles(trackable_tickers, int(duration_minutes), end_time))
         download_stop_time = time.time()
         logger.info(f"✅ Скачивание завершено.")
 
@@ -106,7 +112,7 @@ def getTrackedTickers() -> list[str]:
     #     "BNBUSDT"
     # ]
 
-def doTick():
+def doTick(servertime_ms: int):
     """
     Функция ежеминутного тика
     """
@@ -134,7 +140,7 @@ def doTick():
         last_minute_number = max(recent_klines.keys())
         # -1 стоит, потому что в свеча с номером текущей минутой закрывается по мнению бинанса в 00 следующей минуты
         # и чтобы не ломать психику логике ботов, проще тут это учесть
-        current_minute_number = int(datetime.now().timestamp() / 60) - 1
+        current_minute_number = int(servertime_ms / 60) - 1
         logger.debug(f"Последняя сохранённая минута: {last_minute_number}. Текущая минута {current_minute_number}")
         logger.debug(f"Всего в хранилище содержится {len(get_1m_candles())} записей")
 
@@ -143,7 +149,7 @@ def doTick():
             logger.info(f"Найдены {missing_minutes} недостающих минут. Скачиваем...")
 
             # Как быстро ты скачаешь 60-80мб?
-            klines_missing: OrderedDict[int, list[KlineRecord]] = download_candles_reccursively(binance_trackable_tickers, missing_minutes)
+            klines_missing: OrderedDict[int, list[KlineRecord]] = download_candles_reccursively(servertime_ms, binance_trackable_tickers, missing_minutes)
 
             if klines_missing:
                 save_klines_to_ram(klines_missing)
@@ -157,7 +163,7 @@ def doTick():
         logger.error(f"❌ Попытка восстановить хранилище с помщью сети. Скачиваем  {MAX_CACHED_CANDLES} минут по всем тикерам.")
 
         # Как быстро ты скачаешь 60-80мб?
-        klines_missing: OrderedDict[int, list[KlineRecord]] = download_candles_reccursively(binance_trackable_tickers, MAX_CACHED_CANDLES)
+        klines_missing: OrderedDict[int, list[KlineRecord]] = download_candles_reccursively(servertime_ms, binance_trackable_tickers, MAX_CACHED_CANDLES)
 
         if klines_missing:
             save_klines_to_ram(klines_missing)
@@ -304,6 +310,7 @@ def doTick():
 
     if price_alerts is None:
         logger.info("✅ Не зафиксировано выхода за пределы ценового окна.")
+        return
     else:
         price_overlimit_tickers = [candle for candle in last_minute_candles if candle.symbol in price_alerts]
         logger.debug(f"✅ Проверка закончена.")
@@ -325,13 +332,11 @@ def doTick():
     overlimit_tickers = []
 
     if volume_alerts is None:
-        logger.error("✅ Проверка закончена. Не зафиксировано превышений.")
+        logger.info("✅ Проверка закончена. Не зафиксировано превышений.")
+        return
     else:
         overlimit_tickers = [candle for candle in last_minute_candles if candle.symbol in volume_alerts]
         logger.info(f"✅ Проверка закончена. Зафиксировано {len(overlimit_tickers)} превышений")
-
-    if volume_alerts is None or price_alerts is None:
-        return
     # ====================== Step 10 ======================== #
     # Оповещаю подключенных клиентов о новом сигнале и актуальной точке входа в сделку
     #
@@ -339,14 +344,8 @@ def doTick():
     logger.debug(f"Формируем алерты для отправки...")
     alerts: List[AlertRecord] = []
     for kline in overlimit_tickers:
-
-        # Эмуляция появления алерта
-        alert = AlertRecord(
-            ticker = kline.symbol,
-            time = int(datetime.now().timestamp()),
-        )
+        alert = AlertRecord( ticker = kline.symbol, time = servertime_ms)
         logger.info(f"🔥🔥🔥 Зафиксирован алекрт по тикеру {kline.symbol}  time={alert.time} 🔥🔥🔥")
-
         alerts.append(alert)
 
     logger.debug(f"Рассылаем алерты клиентам...")
@@ -362,6 +361,15 @@ def main():
     logger.info("Скрипт-стартер запущен.")
 
     try:
+
+        # Получаем разницу времени с сервером
+        diff = get_server_time_diff()
+        if diff is None:
+            logger.error("❌ Не удалось получить время сервера. Выход.")
+            return
+        servertime_ms = int(time.time() * 1000) + diff
+        # ======================================================= # 
+
         logger.info(f"Получаю список актуальных тикеров...")
         # TODO: Необходимо отработать моменты, когда отслеживаемые тикеры закрываются для торговли
         trackable_tickers: list[str] = getTrackedTickers()
@@ -369,8 +377,9 @@ def main():
             logger.error("❌ Не удалось получить список тикеров")
             return
         logger.info(f"✅ Найдено торгующихся тикеров: {len(trackable_tickers)}")
-        
-        klines_1m_full: OrderedDict[int, list[KlineRecord]] = download_candles_reccursively(trackable_tickers, MAX_CACHED_CANDLES)
+        # ======================================================= # 
+
+        klines_1m_full: OrderedDict[int, list[KlineRecord]] = download_candles_reccursively(servertime_ms, trackable_tickers, MAX_CACHED_CANDLES)
 
         logger.info(f"✅ Актуальные архивные данные за {len(klines_1m_full)} минут получены.")
 
@@ -397,7 +406,21 @@ def main():
             start_time = time.time()
 
             logger.info("# ====================== doTick ========================= #")
-            doTick()
+
+            server_time_diff_ms = int(time.time() * 1000) 
+            diff = get_server_time_diff()
+            if diff is not None:
+                servertime_ms = server_time_diff_ms + diff
+                logger.info(f"Текущая разница времени с сервером: {diff} мс")
+            else:
+                logger.warning("Не удалось получить разницу времени")
+                logger.info("# ===================== End Tick ======================== #")
+                logger.info("retry after 30s....")
+                time.sleep(30)
+                continue;
+
+            doTick(server_time_diff_ms)
+
             logger.info("# ===================== End Tick ======================== #")
             logger.info("")
 
@@ -415,7 +438,6 @@ def main():
         alert_thread.stop()
         alert_thread.join(timeout=2)
         logger.info("Остановлено пользователем")
-
 
 main()
 

@@ -1,4 +1,5 @@
 import asyncio
+import time
 from collections import OrderedDict
 
 from config import *
@@ -16,6 +17,7 @@ class UDPMarketDataServer:
         self.serializer = ProtocolSerializer()
         self.transport = None
         self.is_busy = False   # флаг занятости
+        self.time_offset_ms: int = 0   # смещение относительно Binance
         
     async def start(self):
         loop = asyncio.get_running_loop()
@@ -33,6 +35,14 @@ class UDPMarketDataServer:
         if self.transport:
             self.transport.close()
             
+    def set_time_offset(self, offset_ms: int) -> None:
+        """Устанавливает смещение времени (Binance - локальное) в миллисекундах."""
+        self.time_offset_ms = offset_ms
+
+    def get_adjusted_now_ms(self) -> int:
+        """Возвращает текущее время с учётом смещения."""
+        return int(time.time() * 1000) + self.time_offset_ms
+    
     def update_data(self, new_data: OrderedDict[int, list[KlineRecord]]):
         """Обновление данных (вызывается при поступлении новых данных)"""
         self.global_data = new_data
@@ -71,11 +81,28 @@ class UDPServerProtocol(asyncio.DatagramProtocol):
                 self._handle_kline_request(packet_number, payload, addr)
             elif ptype == PacketType.SYMBOLS_REQUEST:
                 self._handle_symbols_request(packet_number, payload, addr)
+            elif ptype == PacketType.TIME_REQUEST:
+                self._handle_time_request(packet_number, payload, addr)
             else:
                 logger.warning(f"Неизвестный тип пакета {ptype} от {addr}")
 
         except Exception as e:
             logger.error(f"Ошибка обработки запроса от {addr}: {e}")
+
+    def _handle_time_request(self, packet_number: int, payload: bytes, addr):
+        req = self.server.serializer.deserialize_time_request(payload)
+        if req is None:
+            logger.error(f"Некорректный TIME_REQUEST от {addr}")
+            return
+
+        logger.debug(f"Time запрос от {addr}: packet={packet_number}, client_ts={req.client_timestamp_ms}")
+
+        # Формируем ответ: всегда успех (0), серверное время
+        server_time = self.server.get_adjusted_now_ms()
+        resp = TimeResponse(status=0, server_time_ms=server_time)
+        response_data = self.server.serializer.serialize_time_response(resp, packet_number)
+        self._send_response(response_data, addr)
+        logger.debug(f"Отправлен Time ответ для {addr}: server_time={server_time}")
 
     def _handle_kline_request(self, packet_number: int, payload: bytes, addr):
         # Десериализуем запрос на свечи
@@ -121,7 +148,7 @@ class UDPServerProtocol(asyncio.DatagramProtocol):
             return
 
         # TODO: Учитывать запрошеное время
-        
+
         logger.info(f"Symbols запрос от {addr}: packet={packet_number}")
 
         # Формируем ответ
